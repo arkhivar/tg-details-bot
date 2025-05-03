@@ -124,6 +124,7 @@ def register_handlers(dp, db_enabled=False):
     dp.register_message_handler(info_command, commands=['info'])
     dp.register_message_handler(type_command, commands=['type'])
     dp.register_message_handler(members_command, commands=['members'])
+    dp.register_message_handler(hello_command, commands=['hello'])  # Added explicit hello command
     
     # New chat members handler
     dp.register_message_handler(new_chat_members, content_types=types.ContentTypes.NEW_CHAT_MEMBERS)
@@ -214,6 +215,7 @@ async def help_command(message: types.Message):
         "🔍 <b>Available Commands</b>:\n\n"
         "/id - Get the current chat ID\n"
         "/info - Display detailed information about this chat\n"
+        "/hello - Force the bot to respond with basic chat info\n"
         "/type - Show the chat type (private, group, supergroup, channel)\n"
         "/members - Get the number of members (when available)\n\n"
         "You can also @mention me in a message to get basic chat info.\n\n"
@@ -265,6 +267,72 @@ async def members_command(message: types.Message):
     except Exception as e:
         logger.error(f"Error getting members count: {e}")
         await message.reply(f"❌ Error getting member count: {str(e)}")
+
+async def hello_command(message: types.Message):
+    """Handler for /hello command - an explicit command to get bot to respond"""
+    try:
+        logger.info(f"Hello command received in chat: {message.chat.id}")
+        chat_id = message.chat.id
+        chat_type = message.chat.type
+        
+        # Create keyboard with info buttons
+        keyboard = InlineKeyboardMarkup(row_width=2)
+        keyboard.add(
+            InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
+            InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
+            InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
+            InlineKeyboardButton("❓ Help", callback_data="show_help")
+        )
+        
+        # Start with immediate basic response
+        await message.reply(
+            f"👋 <b>Hello from tgDetailsBot!</b>\n\n"
+            f"🆔 <b>Chat ID</b>: <code>{chat_id}</code>\n"
+            f"📋 <b>Type</b>: {chat_type}\n\n"
+            f"Click a button below or use /info for more details.",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+        # Update database if needed
+        try:
+            from app import db, Chat
+            # Check if this chat is already in database
+            db_chat = db.session.query(Chat).filter_by(id=chat_id).first()
+            
+            if not db_chat:
+                logger.info(f"New chat detected via hello command: {chat_id}")
+                # Get full chat info
+                chat_info = await get_chat_info(message.bot, chat_id)
+                
+                # Create new database entry
+                new_chat = Chat(
+                    id=chat_id,
+                    title=chat_info.get('title'),
+                    type=chat_type,
+                    username=chat_info.get('username'),
+                    first_name=chat_info.get('first_name'),
+                    last_name=chat_info.get('last_name'),
+                    members_count=chat_info.get('members_count')
+                )
+                db.session.add(new_chat)
+                db.session.commit()
+                logger.info(f"Added new chat to database: {chat_id}")
+        except Exception as db_error:
+            logger.error(f"Database error in hello command: {db_error}")
+            # Continue even if database update fails
+            
+    except Exception as e:
+        logger.error(f"Error in hello command: {e}")
+        logger.exception("Full exception details:")
+        
+        # Simple fallback if anything fails
+        await message.reply(
+            f"👋 <b>Hello!</b>\n\n"
+            f"<b>Chat ID</b>: <code>{message.chat.id}</code>\n\n"
+            f"Use /info for details.",
+            parse_mode="HTML"
+        )
 
 async def new_chat_members(message: types.Message):
     """Handler for new_chat_members event"""
@@ -504,6 +572,7 @@ async def button_callback(callback_query: types.CallbackQuery):
                 "🔍 <b>Available Commands</b>:\n\n"
                 "/id - Get the current chat ID\n"
                 "/info - Display detailed information about this chat\n"
+                "/hello - Force the bot to respond with basic chat info\n"
                 "/type - Show the chat type (private, group, supergroup, channel)\n"
                 "/members - Get the number of members (when available)\n\n"
                 "You can also @mention me in a message to get basic chat info.\n\n"
