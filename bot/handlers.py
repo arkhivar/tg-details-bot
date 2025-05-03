@@ -22,6 +22,21 @@ class DatabaseMiddleware(BaseMiddleware):
         # Skip service messages like edited_message, etc.
         if not message or not message.chat:
             return
+        
+        # Track if this is the first message we've seen in this chat
+        try:
+            chat_id = message.chat.id
+            # Check if this chat is already in database
+            db_chat = self.db.session.query(self.Chat).filter_by(id=chat_id).first()
+            
+            if not db_chat:
+                logger.info(f"First message from a new chat: {chat_id}")
+                # Set flag to indicate this is the first message in a chat
+                message.is_first_message_in_chat = True
+            else:
+                message.is_first_message_in_chat = False
+        except Exception as e:
+            logger.error(f"Error checking chat history: {e}")
             
         await self.update_chat_info(message.bot, message.chat)
         
@@ -121,23 +136,68 @@ def register_handlers(dp, db_enabled=False):
 
 async def start_command(message: types.Message):
     """Handler for /start command"""
-    # Create inline keyboard with command buttons
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-        InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
-        InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-        InlineKeyboardButton("👥 Members", callback_data="get_members")
-    )
+    chat_type = message.chat.type
     
-    await message.reply(
-        "👋 Hello! I'm a Telegram Info Bot.\n\n"
-        "I can help you get technical information about chats. "
-        "This is useful for setting up other bots.\n\n"
-        "Add me to a group or channel and use /info to see details.\n"
-        "Use /help to see all available commands.",
-        reply_markup=keyboard
-    )
+    # Different response based on chat type
+    if chat_type == 'private':
+        # In private chats, show introduction
+        keyboard = InlineKeyboardMarkup(row_width=2)
+        keyboard.add(
+            InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
+            InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
+            InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
+            InlineKeyboardButton("👥 Members", callback_data="get_members")
+        )
+        
+        await message.reply(
+            "👋 Hello! I'm a Telegram Info Bot.\n\n"
+            "I can help you get technical information about chats. "
+            "This is useful for setting up other bots.\n\n"
+            "Add me to a group or channel and use /info to see details.\n"
+            "Use /help to see all available commands.",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    else:
+        # In groups/channels, show group info
+        try:
+            logger.info(f"Start command received in chat: {message.chat.id}")
+            chat_info = await get_chat_info(message.bot, message.chat.id)
+            formatted_info = format_chat_info(chat_info)
+            
+            keyboard = InlineKeyboardMarkup(row_width=2)
+            keyboard.add(
+                InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
+                InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
+                InlineKeyboardButton("👥 Members", callback_data="get_members"),
+                InlineKeyboardButton("❓ Help", callback_data="show_help")
+            )
+            
+            await message.reply(
+                "👋 <b>Hello!</b> I'm a Telegram Info Bot.\n\n"
+                "Here's the information about this chat:\n\n" + formatted_info,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        except Exception as e:
+            logger.error(f"Error sending start command response in group: {e}")
+            logger.exception("Full exception details:")
+            
+            # Fallback to simpler message
+            keyboard = InlineKeyboardMarkup(row_width=2)
+            keyboard.add(
+                InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
+                InlineKeyboardButton("❓ Help", callback_data="show_help")
+            )
+            
+            await message.reply(
+                f"👋 <b>Hello!</b> I'm a Telegram Info Bot.\n\n"
+                f"<b>Chat ID:</b> <code>{message.chat.id}</code>\n"
+                f"<b>Chat Type:</b> {message.chat.type}\n\n"
+                f"Use /info for more details or /help to see all commands.",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
 
 async def help_command(message: types.Message):
     """Handler for /help command"""
@@ -208,9 +268,21 @@ async def members_command(message: types.Message):
 
 async def new_chat_members(message: types.Message):
     """Handler for new_chat_members event"""
+    # Print all new members for debugging
+    logger.info(f"new_chat_members event triggered in chat {message.chat.id}")
+    logger.info(f"New members: {[u.id for u in message.new_chat_members]}")
+    
+    # Get bot's ID for comparison
+    bot_info = await message.bot.get_me()
+    bot_id = bot_info.id
+    logger.info(f"Bot ID is: {bot_id}")
+    
     # Check if our bot is among the new members
+    bot_added = False
     for user in message.new_chat_members:
-        if user.id == message.bot.id:
+        logger.info(f"Checking user: {user.id} vs bot: {bot_id}")
+        if user.id == bot_id:
+            bot_added = True
             logger.info(f"Bot was added to chat: {message.chat.id} - {message.chat.title}")
             
             # Bot was added to a new chat, send info immediately
@@ -280,14 +352,48 @@ async def new_chat_members(message: types.Message):
 
 async def message_handler(message: types.Message):
     """General message handler"""
+    chat_id = message.chat.id
+    chat_type = message.chat.type
+    
+    # Special handling for group chats
+    if chat_type in ['group', 'supergroup'] and message.from_user:
+        if message.from_user.is_bot:
+            # Don't respond to other bots
+            return
+            
+        # Check if this is the first message we've received in this chat
+        if getattr(message, 'is_first_message_in_chat', None) is True:
+            logger.info(f"First message detected in chat: {chat_id}")
+            try:
+                chat_info = await get_chat_info(message.bot, chat_id)
+                formatted_info = format_chat_info(chat_info)
+                
+                # Create keyboard with info buttons
+                keyboard = InlineKeyboardMarkup(row_width=2)
+                keyboard.add(
+                    InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
+                    InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
+                    InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
+                    InlineKeyboardButton("❓ Help", callback_data="show_help")
+                )
+                
+                await message.reply(
+                    "👋 <b>Hello! I noticed I'm in this chat.</b>\n\n"
+                    "I'm a bot that provides technical information about Telegram chats.\n\n"
+                    "<b>Chat Information:</b>\n\n" + formatted_info,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                logger.error(f"Error sending group welcome: {e}")
+    
     # Check if the bot is mentioned in the message
     bot_info = await message.bot.get_me()
     bot_username = bot_info.username
     
-    if f"@{bot_username}" in message.text:
+    if message.text and f"@{bot_username}" in message.text:
         # Bot was mentioned, send basic info
-        chat_id = message.chat.id
-        chat_type = message.chat.type
+        logger.info(f"Bot was mentioned in chat: {chat_id}")
         
         # Create inline keyboard with command buttons
         keyboard = InlineKeyboardMarkup(row_width=2)
