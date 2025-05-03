@@ -2,18 +2,95 @@ import logging
 from datetime import datetime
 from aiogram import types
 from aiogram.dispatcher.filters import CommandHelp, CommandStart
+from aiogram.dispatcher.middlewares import BaseMiddleware
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from .utils import get_chat_info, format_chat_info
 
 logger = logging.getLogger(__name__)
 
-def register_handlers(dp):
+class DatabaseMiddleware(BaseMiddleware):
+    """Middleware to handle database operations"""
+    
+    def __init__(self, db, chat_model):
+        """Initialize with the database and chat model"""
+        self.db = db
+        self.Chat = chat_model
+        super(DatabaseMiddleware, self).__init__()
+    
+    async def on_pre_process_message(self, message: types.Message, data: dict):
+        """Process message before handlers, update chat info in database"""
+        # Skip service messages like edited_message, etc.
+        if not message or not message.chat:
+            return
+            
+        await self.update_chat_info(message.bot, message.chat)
+        
+    async def on_pre_process_callback_query(self, callback_query: types.CallbackQuery, data: dict):
+        """Process callback query, update chat info in database"""
+        if not callback_query.message or not callback_query.message.chat:
+            return
+            
+        await self.update_chat_info(callback_query.bot, callback_query.message.chat)
+    
+    async def update_chat_info(self, bot, chat):
+        """Update chat info in database"""
+        try:
+            # Get chat details
+            chat_id = chat.id
+            chat_type = chat.type
+            
+            # Query existing chat in database
+            with self.db.engine.connect() as conn:
+                # Check if this chat is already in database
+                db_chat = self.db.session.query(self.Chat).filter_by(id=chat_id).first()
+                
+                if not db_chat:
+                    # Create new entry
+                    full_chat_info = await get_chat_info(bot, chat_id)
+                    new_chat = self.Chat(
+                        id=chat_id,
+                        title=full_chat_info.get('title'),
+                        type=chat_type,
+                        username=full_chat_info.get('username'),
+                        first_name=full_chat_info.get('first_name'),
+                        last_name=full_chat_info.get('last_name'),
+                        members_count=full_chat_info.get('members_count')
+                    )
+                    self.db.session.add(new_chat)
+                else:
+                    # Just update the last_activity timestamp
+                    db_chat.last_activity = datetime.utcnow()
+                    
+                    # Update members count if available
+                    if chat_type != 'private':
+                        try:
+                            full_chat = await bot.get_chat(chat_id)
+                            if hasattr(full_chat, 'members_count'):
+                                db_chat.members_count = full_chat.members_count
+                        except Exception as e:
+                            logger.error(f"Failed to update members count: {e}")
+                
+                self.db.session.commit()
+                
+        except Exception as e:
+            logger.error(f"Error updating chat in database: {e}")
+            # Rollback the session in case of error
+            self.db.session.rollback()
+
+def register_handlers(dp, db_enabled=False):
     """
     Register message handlers for the bot.
     
     Args:
         dp: Aiogram dispatcher
+        db_enabled: Whether database functionality is enabled
     """
+    # Register global middleware for database support
+    if db_enabled:
+        from app import db, Chat
+        # Store the db and Chat model for use in handlers
+        dp.middleware.setup(DatabaseMiddleware(db, Chat))
+    
     # Command handlers
     dp.register_message_handler(start_command, CommandStart())
     dp.register_message_handler(help_command, CommandHelp())

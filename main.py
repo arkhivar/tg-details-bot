@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 
 from bot import start_bot
+from app import app  # Import Flask app 
 
 # Configure logging
 logging.basicConfig(
