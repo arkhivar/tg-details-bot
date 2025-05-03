@@ -39,14 +39,19 @@ class DatabaseMiddleware(BaseMiddleware):
             chat_id = chat.id
             chat_type = chat.type
             
+            logger.info(f"Updating chat info for chat ID: {chat_id}, type: {chat_type}")
+            
             # Query existing chat in database
             with self.db.engine.connect() as conn:
                 # Check if this chat is already in database
                 db_chat = self.db.session.query(self.Chat).filter_by(id=chat_id).first()
                 
                 if not db_chat:
+                    logger.info(f"New chat detected. Adding to database: {chat_id}")
                     # Create new entry
                     full_chat_info = await get_chat_info(bot, chat_id)
+                    logger.info(f"Retrieved chat info: {full_chat_info}")
+                    
                     new_chat = self.Chat(
                         id=chat_id,
                         title=full_chat_info.get('title'),
@@ -57,7 +62,9 @@ class DatabaseMiddleware(BaseMiddleware):
                         members_count=full_chat_info.get('members_count')
                     )
                     self.db.session.add(new_chat)
+                    logger.info(f"Added new chat to session: {chat_id}")
                 else:
+                    logger.info(f"Existing chat found. Updating last_activity: {chat_id}")
                     # Just update the last_activity timestamp
                     db_chat.last_activity = datetime.utcnow()
                     
@@ -67,13 +74,17 @@ class DatabaseMiddleware(BaseMiddleware):
                             full_chat = await bot.get_chat(chat_id)
                             if hasattr(full_chat, 'members_count'):
                                 db_chat.members_count = full_chat.members_count
+                                logger.info(f"Updated members count to {full_chat.members_count}")
                         except Exception as e:
                             logger.error(f"Failed to update members count: {e}")
                 
+                logger.info("Committing changes to database")
                 self.db.session.commit()
+                logger.info("Database commit successful")
                 
         except Exception as e:
             logger.error(f"Error updating chat in database: {e}")
+            logger.exception("Full exception details:")
             # Rollback the session in case of error
             self.db.session.rollback()
 
