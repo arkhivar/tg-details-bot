@@ -211,40 +211,72 @@ async def new_chat_members(message: types.Message):
     # Check if our bot is among the new members
     for user in message.new_chat_members:
         if user.id == message.bot.id:
-            # Bot was added to a new chat, send info
+            logger.info(f"Bot was added to chat: {message.chat.id} - {message.chat.title}")
+            
+            # Bot was added to a new chat, send info immediately
             try:
+                # First, send an immediate welcome message
+                initial_keyboard = InlineKeyboardMarkup(row_width=2)
+                initial_keyboard.add(
+                    InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
+                    InlineKeyboardButton("❓ Help", callback_data="show_help")
+                )
+                
+                welcome_message = await message.reply(
+                    "👋 <b>Hello everyone!</b> I'm a bot that provides technical information about Telegram chats.\n\n"
+                    "Getting chat details... please wait...",
+                    parse_mode="HTML",
+                    reply_markup=initial_keyboard
+                )
+                
+                # Then get the detailed chat info
                 chat_info = await get_chat_info(message.bot, message.chat.id)
                 formatted_info = format_chat_info(chat_info)
                 
-                # Create inline keyboard with command buttons
-                keyboard = InlineKeyboardMarkup(row_width=2)
-                keyboard.add(
+                # Create detailed inline keyboard with command buttons
+                detailed_keyboard = InlineKeyboardMarkup(row_width=2)
+                detailed_keyboard.add(
                     InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
                     InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
                     InlineKeyboardButton("👥 Members", callback_data="get_members"),
                     InlineKeyboardButton("❓ Help", callback_data="show_help")
                 )
                 
-                await message.reply(
-                    "👋 Thanks for adding me!\n\n"
+                # Update the welcome message with detailed info
+                await welcome_message.edit_text(
+                    "👋 <b>Thanks for adding me!</b>\n\n"
+                    "I can help you get technical information about this chat. "
+                    "This is useful for setting up other bots.\n\n"
                     "<b>Chat Information:</b>\n\n" + formatted_info,
                     parse_mode="HTML",
-                    reply_markup=keyboard
-                )
-            except Exception as e:
-                logger.error(f"Error sending welcome info: {e}")
-                # Create simple keyboard with fewer options
-                keyboard = InlineKeyboardMarkup(row_width=2)
-                keyboard.add(
-                    InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton("❓ Help", callback_data="show_help")
+                    reply_markup=detailed_keyboard
                 )
                 
-                await message.reply(
-                    "👋 Thanks for adding me! I can provide technical information about this chat.\n"
-                    "Use /info to see details or /help for all commands.",
-                    reply_markup=keyboard
-                )
+                logger.info(f"Successfully sent welcome message to chat: {message.chat.id}")
+                
+            except Exception as e:
+                logger.error(f"Error sending welcome info: {e}")
+                logger.exception("Full exception details:")
+                
+                # If there was an error getting detailed info, send a simpler message
+                try:
+                    # Create simple keyboard with fewer options
+                    simple_keyboard = InlineKeyboardMarkup(row_width=2)
+                    simple_keyboard.add(
+                        InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
+                        InlineKeyboardButton("❓ Help", callback_data="show_help")
+                    )
+                    
+                    await message.reply(
+                        "👋 <b>Thanks for adding me!</b>\n\n"
+                        f"<b>Chat ID:</b> <code>{message.chat.id}</code>\n"
+                        f"<b>Chat Type:</b> {message.chat.type}\n\n"
+                        "Use /info to see more details or /help for all commands.",
+                        parse_mode="HTML",
+                        reply_markup=simple_keyboard
+                    )
+                except Exception as inner_e:
+                    logger.error(f"Failed to send fallback welcome message: {inner_e}")
 
 async def message_handler(message: types.Message):
     """General message handler"""
