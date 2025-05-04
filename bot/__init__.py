@@ -12,11 +12,12 @@ sys.path.append(parent_dir)
 
 # Import the db and Chat model
 try:
-    from app import db, Chat
+    from app import db, Chat, app
     HAS_DB = True
 except ImportError:
     logger.warning("Could not import database models. Chat tracking disabled.")
     HAS_DB = False
+    app = None
 
 def start_bot(token):
     """
@@ -29,7 +30,7 @@ def start_bot(token):
     bot = Bot(token=token)
     dp = Dispatcher(bot)
     
-    # Register message handlers
+    # Register message handlers with the appropriate database connection
     register_handlers(dp, db_enabled=HAS_DB)
     
     # Start the bot

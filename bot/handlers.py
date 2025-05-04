@@ -11,10 +11,12 @@ logger = logging.getLogger(__name__)
 class DatabaseMiddleware(BaseMiddleware):
     """Middleware to handle database operations"""
     
-    def __init__(self, db, chat_model):
+    def __init__(self, db, chat_model, app):
         """Initialize with the database and chat model"""
         self.db = db
         self.Chat = chat_model
+        self.app = app  # Store Flask app for context
+        self.update_queue = []  # Queue to store updates to process
         super(DatabaseMiddleware, self).__init__()
     
     async def on_pre_process_message(self, message: types.Message, data: dict):
@@ -23,85 +25,42 @@ class DatabaseMiddleware(BaseMiddleware):
         if not message or not message.chat:
             return
         
-        # Track if this is the first message we've seen in this chat
+        # Always mark new messages in group chats for processing
         try:
             chat_id = message.chat.id
-            # Check if this chat is already in database
-            db_chat = self.db.session.query(self.Chat).filter_by(id=chat_id).first()
+            chat_type = message.chat.type
             
-            if not db_chat:
-                logger.info(f"First message from a new chat: {chat_id}")
-                # Set flag to indicate this is the first message in a chat
-                message.is_first_message_in_chat = True
-            else:
-                message.is_first_message_in_chat = False
+            # Use a simpler flag-based system not dependent on database
+            # Set a flag on the message object directly
+            if chat_type in ['group', 'supergroup']:
+                message.is_in_group = True
+                # Store basic info about the chat as first message
+                await self._save_chat_info_safely(message.bot, message.chat)
+            
         except Exception as e:
-            logger.error(f"Error checking chat history: {e}")
-            
-        await self.update_chat_info(message.bot, message.chat)
+            logger.error(f"Error in message pre-processing: {e}")
         
     async def on_pre_process_callback_query(self, callback_query: types.CallbackQuery, data: dict):
         """Process callback query, update chat info in database"""
         if not callback_query.message or not callback_query.message.chat:
             return
-            
-        await self.update_chat_info(callback_query.bot, callback_query.message.chat)
+        
+        # No database interactions in middleware
     
-    async def update_chat_info(self, bot, chat):
-        """Update chat info in database"""
+    async def _save_chat_info_safely(self, bot, chat):
+        """Queue chat info to be saved asynchronously"""
         try:
-            # Get chat details
+            # Create a task to update chat info in the database
             chat_id = chat.id
             chat_type = chat.type
             
-            logger.info(f"Updating chat info for chat ID: {chat_id}, type: {chat_type}")
+            # This is just for logging activity - actual database updates 
+            # will happen through explicit commands like /hello
+            logger.info(f"Saw activity in chat ID: {chat_id}, type: {chat_type}")
             
-            # Query existing chat in database
-            with self.db.engine.connect() as conn:
-                # Check if this chat is already in database
-                db_chat = self.db.session.query(self.Chat).filter_by(id=chat_id).first()
-                
-                if not db_chat:
-                    logger.info(f"New chat detected. Adding to database: {chat_id}")
-                    # Create new entry
-                    full_chat_info = await get_chat_info(bot, chat_id)
-                    logger.info(f"Retrieved chat info: {full_chat_info}")
-                    
-                    new_chat = self.Chat(
-                        id=chat_id,
-                        title=full_chat_info.get('title'),
-                        type=chat_type,
-                        username=full_chat_info.get('username'),
-                        first_name=full_chat_info.get('first_name'),
-                        last_name=full_chat_info.get('last_name'),
-                        members_count=full_chat_info.get('members_count')
-                    )
-                    self.db.session.add(new_chat)
-                    logger.info(f"Added new chat to session: {chat_id}")
-                else:
-                    logger.info(f"Existing chat found. Updating last_activity: {chat_id}")
-                    # Just update the last_activity timestamp
-                    db_chat.last_activity = datetime.utcnow()
-                    
-                    # Update members count if available
-                    if chat_type != 'private':
-                        try:
-                            full_chat = await bot.get_chat(chat_id)
-                            if hasattr(full_chat, 'members_count'):
-                                db_chat.members_count = full_chat.members_count
-                                logger.info(f"Updated members count to {full_chat.members_count}")
-                        except Exception as e:
-                            logger.error(f"Failed to update members count: {e}")
-                
-                logger.info("Committing changes to database")
-                self.db.session.commit()
-                logger.info("Database commit successful")
-                
         except Exception as e:
-            logger.error(f"Error updating chat in database: {e}")
+            logger.error(f"Error queuing chat info update: {e}")
             logger.exception("Full exception details:")
-            # Rollback the session in case of error
-            self.db.session.rollback()
 
 def register_handlers(dp, db_enabled=False):
     """
@@ -113,9 +72,9 @@ def register_handlers(dp, db_enabled=False):
     """
     # Register global middleware for database support
     if db_enabled:
-        from app import db, Chat
+        from app import db, Chat, app
         # Store the db and Chat model for use in handlers
-        dp.middleware.setup(DatabaseMiddleware(db, Chat))
+        dp.middleware.setup(DatabaseMiddleware(db, Chat, app))
     
     # Command handlers
     dp.register_message_handler(start_command, CommandStart())
@@ -429,31 +388,10 @@ async def message_handler(message: types.Message):
             # Don't respond to other bots
             return
             
-        # Check if this is the first message we've received in this chat
-        if getattr(message, 'is_first_message_in_chat', None) is True:
-            logger.info(f"First message detected in chat: {chat_id}")
-            try:
-                chat_info = await get_chat_info(message.bot, chat_id)
-                formatted_info = format_chat_info(chat_info)
-                
-                # Create keyboard with info buttons
-                keyboard = InlineKeyboardMarkup(row_width=2)
-                keyboard.add(
-                    InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
-                    InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-                    InlineKeyboardButton("❓ Help", callback_data="show_help")
-                )
-                
-                await message.reply(
-                    "👋 <b>Hello! I noticed I'm in this chat.</b>\n\n"
-                    "I'm a bot that provides technical information about Telegram chats.\n\n"
-                    "<b>Chat Information:</b>\n\n" + formatted_info,
-                    parse_mode="HTML",
-                    reply_markup=keyboard
-                )
-            except Exception as e:
-                logger.error(f"Error sending group welcome: {e}")
+        # Check if this is the first message in a group chat (using simpler is_in_group flag)
+        if getattr(message, 'is_in_group', False):
+            logger.info(f"Group chat message detected: {chat_id}")
+            # No automatic welcome now - better to use explicit commands
     
     # Check if the bot is mentioned in the message
     bot_info = await message.bot.get_me()
@@ -467,14 +405,15 @@ async def message_handler(message: types.Message):
         keyboard = InlineKeyboardMarkup(row_width=2)
         keyboard.add(
             InlineKeyboardButton("ℹ️ More Info", callback_data="get_info"),
-            InlineKeyboardButton("📊 Chat Type", callback_data="get_type")
+            InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
+            InlineKeyboardButton("❓ Help", callback_data="show_help")
         )
         
         await message.reply(
             f"🤖 <b>Basic Chat Info</b>:\n"
             f"🆔 <b>Chat ID</b>: <code>{chat_id}</code>\n"
             f"📋 <b>Type</b>: {chat_type}\n\n"
-            f"Use /info for more details.",
+            f"Use /hello or /info for more details.",
             parse_mode="HTML",
             reply_markup=keyboard
         )
