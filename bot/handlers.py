@@ -4,7 +4,7 @@ from aiogram import types
 from aiogram.dispatcher.filters import CommandHelp, CommandStart
 from aiogram.dispatcher.middlewares import BaseMiddleware
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from .utils import get_chat_info, format_chat_info
+from .utils import get_chat_info, format_chat_info, get_chat_admins, format_admin_info
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,7 @@ def register_handlers(dp, db_enabled=False):
     dp.register_message_handler(type_command, commands=['type'])
     dp.register_message_handler(members_command, commands=['members'])
     dp.register_message_handler(hello_command, commands=['hello'])  # Added explicit hello command
+    dp.register_message_handler(admins_command, commands=['admins'])  # Admin information command
     
     # New chat members handler
     dp.register_message_handler(new_chat_members, content_types=types.ContentTypes.NEW_CHAT_MEMBERS)
@@ -167,7 +168,8 @@ async def help_command(message: types.Message):
         InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
         InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
         InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-        InlineKeyboardButton("👥 Members", callback_data="get_members")
+        InlineKeyboardButton("👥 Members", callback_data="get_members"),
+        InlineKeyboardButton("👮‍♂️ Admins", callback_data="get_admins")
     )
     
     help_text = (
@@ -176,7 +178,8 @@ async def help_command(message: types.Message):
         "/info - Display detailed information about this chat\n"
         "/hello - Force the bot to respond with basic chat info\n"
         "/type - Show the chat type (private, group, supergroup, channel)\n"
-        "/members - Get the number of members (when available)\n\n"
+        "/members - Get the number of members (when available)\n"
+        "/admins - Get information about group administrators\n\n"
         "You can also @mention me in a message to get basic chat info.\n\n"
         "<i>Note: Some information may be limited based on my permissions and the chat type.</i>"
     )

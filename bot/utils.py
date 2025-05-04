@@ -150,3 +150,157 @@ def format_chat_info(info):
     sections.append(f"⏰ <b>Information retrieved at</b>: {current_time}")
     
     return "\n\n".join(sections)
+    
+async def get_chat_admins(bot: Bot, chat_id):
+    """
+    Get information about administrators in a chat.
+    
+    Args:
+        bot: Aiogram Bot instance
+        chat_id: The ID of the chat
+        
+    Returns:
+        dict: Admin information including count and list of admins
+    """
+    try:
+        # This will throw an error for private chats
+        if str(chat_id).startswith('-') or str(chat_id).startswith('100'):
+            # Get list of administrators
+            admins = await bot.get_chat_administrators(chat_id)
+            
+            # Prepare the result data
+            result = {
+                'count': len(admins),
+                'admins': [],
+                'can_pin_messages_count': 0,
+                'can_delete_messages_count': 0,
+                'can_restrict_members_count': 0,
+                'can_promote_members_count': 0,
+                'can_change_info_count': 0,
+                'can_invite_users_count': 0,
+                'has_owner': False,
+                'retrieved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            
+            # Process each admin
+            for admin in admins:
+                admin_info = {
+                    'user_id': admin.user.id,
+                    'username': admin.user.username,
+                    'first_name': admin.user.first_name,
+                    'last_name': admin.user.last_name,
+                    'is_anonymous': getattr(admin, 'is_anonymous', False),
+                    'is_owner': admin.status == 'creator',
+                    'custom_title': getattr(admin, 'custom_title', None),
+                }
+                
+                # Add permission fields
+                admin_info['can_pin_messages'] = getattr(admin, 'can_pin_messages', False)
+                admin_info['can_delete_messages'] = getattr(admin, 'can_delete_messages', False)
+                admin_info['can_restrict_members'] = getattr(admin, 'can_restrict_members', False)
+                admin_info['can_promote_members'] = getattr(admin, 'can_promote_members', False)
+                admin_info['can_change_info'] = getattr(admin, 'can_change_info', False)
+                admin_info['can_invite_users'] = getattr(admin, 'can_invite_users', False)
+                
+                # Update summary counts
+                if admin_info['can_pin_messages']:
+                    result['can_pin_messages_count'] += 1
+                if admin_info['can_delete_messages']:
+                    result['can_delete_messages_count'] += 1
+                if admin_info['can_restrict_members']:
+                    result['can_restrict_members_count'] += 1
+                if admin_info['can_promote_members']:
+                    result['can_promote_members_count'] += 1
+                if admin_info['can_change_info']:
+                    result['can_change_info_count'] += 1
+                if admin_info['can_invite_users']:
+                    result['can_invite_users_count'] += 1
+                
+                if admin_info['is_owner']:
+                    result['has_owner'] = True
+                
+                # Add to the list
+                result['admins'].append(admin_info)
+            
+            return result
+        else:
+            # For private chats
+            return {
+                'count': 1,  # Only the user
+                'admins': [],
+                'error': 'This command only works in groups and channels',
+                'retrieved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+    except Exception as e:
+        logger.error(f"Error getting admins: {e}")
+        return {
+            'error': str(e),
+            'retrieved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+def format_admin_info(info):
+    """
+    Format admin information into a readable text.
+    
+    Args:
+        info (dict): Admin information
+        
+    Returns:
+        str: Formatted text
+    """
+    if not info:
+        return "❌ No information available."
+        
+    if 'error' in info:
+        return f"❌ Error: {info['error']}"
+    
+    sections = []
+    
+    # Admin count
+    sections.append(f"👮‍♂️ <b>Administrators</b>: {info['count']}")
+    
+    # Add summary of permissions
+    permission_summary = [
+        "<b>Permission Summary</b>:",
+        f"📌 <b>Can pin messages</b>: {info['can_pin_messages_count']}/{info['count']}",
+        f"🗑️ <b>Can delete messages</b>: {info['can_delete_messages_count']}/{info['count']}",
+        f"🚫 <b>Can restrict members</b>: {info['can_restrict_members_count']}/{info['count']}",
+        f"⬆️ <b>Can promote members</b>: {info['can_promote_members_count']}/{info['count']}",
+        f"ℹ️ <b>Can change info</b>: {info['can_change_info_count']}/{info['count']}",
+        f"👥 <b>Can invite users</b>: {info['can_invite_users_count']}/{info['count']}"
+    ]
+    sections.append("\n".join(permission_summary))
+    
+    # List individual admins if available
+    if info['admins']:
+        admin_list = ["<b>Admin List</b>:"]
+        for i, admin in enumerate(info['admins'], 1):
+            name_parts = []
+            if admin.get('first_name'):
+                name_parts.append(admin['first_name'])
+            if admin.get('last_name'):
+                name_parts.append(admin['last_name'])
+            
+            admin_name = ' '.join(name_parts) or "Unnamed"
+            
+            admin_entry = f"{i}. {admin_name}"
+            if admin.get('username'):
+                admin_entry += f" (@{admin['username']})"
+                
+            # Add role or custom title
+            if admin.get('is_owner'):
+                admin_entry += " [👑 Owner]"
+            elif admin.get('custom_title'):
+                admin_entry += f" [{admin['custom_title']}]"
+                
+            # Add anonymous flag if applicable
+            if admin.get('is_anonymous'):
+                admin_entry += " [🕵️ Anonymous]"
+                
+            admin_list.append(admin_entry)
+        sections.append("\n".join(admin_list))
+    
+    # Add timestamp
+    sections.append(f"⏰ <b>Information retrieved at</b>: {info['retrieved_at']}")
+    
+    return "\n\n".join(sections)
