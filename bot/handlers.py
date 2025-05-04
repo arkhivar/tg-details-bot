@@ -229,6 +229,42 @@ async def members_command(message: types.Message):
     except Exception as e:
         logger.error(f"Error getting members count: {e}")
         await message.reply(f"❌ Error getting member count: {str(e)}")
+        
+async def admins_command(message: types.Message):
+    """Handler for /admins command - display administrators information"""
+    try:
+        # Check if this is a group or channel
+        if message.chat.type == "private":
+            await message.reply("This command only works in groups and channels.")
+            return
+            
+        # Let user know we're processing
+        processing_msg = await message.reply("👮‍♂️ Getting administrators information...")
+        
+        # Get admins info
+        chat_id = message.chat.id
+        admins_info = await get_chat_admins(message.bot, chat_id)
+        formatted_info = format_admin_info(admins_info)
+        
+        # Create inline keyboard with additional options
+        keyboard = InlineKeyboardMarkup(row_width=2)
+        keyboard.add(
+            InlineKeyboardButton("📋 Chat ID", callback_data="get_id"),
+            InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
+            InlineKeyboardButton("❓ Help", callback_data="show_help")
+        )
+        
+        # Send the formatted admin info
+        await processing_msg.edit_text(
+            formatted_info,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting admin information: {e}")
+        logger.exception("Full exception details:")
+        await message.reply(f"❌ Error getting administrator information: {str(e)}")
 
 async def hello_command(message: types.Message):
     """Handler for /hello command - an explicit command to get bot to respond"""
@@ -500,6 +536,51 @@ async def button_callback(callback_query: types.CallbackQuery):
             else:
                 await callback_query.answer("Member count information is not available")
         
+        elif action == "get_admins":
+            try:
+                if callback_query.message.chat.type in ["private"]:
+                    await callback_query.answer("This feature only works in groups and channels")
+                    return
+                    
+                # Create a temporary message to show we're loading
+                await callback_query.answer("Getting admin information...")
+                
+                # Get admin information
+                admins_info = await get_chat_admins(callback_query.bot, chat_id)
+                formatted_info = format_admin_info(admins_info)
+                
+                # Create back button
+                keyboard = InlineKeyboardMarkup()
+                keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
+                
+                # If message is too long, send a new message instead of editing
+                if len(formatted_info) > 4000:
+                    await callback_query.message.reply(
+                        formatted_info, 
+                        parse_mode="HTML",
+                        reply_markup=keyboard
+                    )
+                    await callback_query.answer("Admin information sent in a new message")
+                else:
+                    await callback_query.message.edit_text(
+                        formatted_info, 
+                        parse_mode="HTML",
+                        reply_markup=keyboard
+                    )
+            except Exception as e:
+                logger.error(f"Error getting admin information via callback: {e}")
+                logger.exception("Full exception details:")
+                
+                # Create back button
+                keyboard = InlineKeyboardMarkup()
+                keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
+                
+                await callback_query.message.edit_text(
+                    f"❌ Error getting administrator information: {str(e)}",
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+                
         elif action == "show_help":
             # Recreate the help keyboard
             keyboard = InlineKeyboardMarkup(row_width=2)
@@ -507,7 +588,8 @@ async def button_callback(callback_query: types.CallbackQuery):
                 InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
                 InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
                 InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-                InlineKeyboardButton("👥 Members", callback_data="get_members")
+                InlineKeyboardButton("👥 Members", callback_data="get_members"),
+                InlineKeyboardButton("👮‍♂️ Admins", callback_data="get_admins")
             )
             
             help_text = (
@@ -516,7 +598,8 @@ async def button_callback(callback_query: types.CallbackQuery):
                 "/info - Display detailed information about this chat\n"
                 "/hello - Force the bot to respond with basic chat info\n"
                 "/type - Show the chat type (private, group, supergroup, channel)\n"
-                "/members - Get the number of members (when available)\n\n"
+                "/members - Get the number of members (when available)\n"
+                "/admins - Get information about group administrators\n\n"
                 "You can also @mention me in a message to get basic chat info.\n\n"
                 "<i>Note: Some information may be limited based on my permissions and the chat type.</i>"
             )
