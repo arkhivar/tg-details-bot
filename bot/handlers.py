@@ -94,16 +94,10 @@ def register_handlers(dp, db_enabled=False):
         hasattr(message, 'forward_date') and message.forward_date is not None
     ), content_types=types.ContentTypes.ANY)
     
-    # Add a specific handler for public group forwards that might not work with the standard handler
+    # Create a completely new handler for all forwards
     dp.register_message_handler(
-        public_group_forward_handler,
-        lambda message: (
-            hasattr(message, 'forward_date') and message.forward_date is not None and
-            not message.forward_from_chat and
-            not message.forward_from and
-            not getattr(message, 'forward_sender_name', None) and
-            hasattr(message, 'forward_origin')
-        ),
+        simple_forward_handler, 
+        lambda message: hasattr(message, 'forward_date') and message.forward_date is not None,
         content_types=types.ContentTypes.ANY
     )
     
@@ -443,20 +437,180 @@ async def new_chat_members(message: types.Message):
                 except Exception as inner_e:
                     logger.error(f"Failed to send fallback welcome message: {inner_e}")
 
-async def public_group_forward_handler(message: types.Message):
-    """Handler specifically for public group forwards that don't provide full chat details"""
+async def simple_forward_handler(message: types.Message):
+    """Simple, reliable handler for all types of forwarded messages"""
     # Log what we got for debugging
-    logger.info(f"=== PUBLIC GROUP FORWARD DEBUG INFO ===")
-    if hasattr(message, 'to_python'):
-        logger.info(f"Message data: {message.to_python()}")
+    logger.info(f"=== FORWARD DEBUG INFO ===")
+    logger.info(f"Message ID: {message.message_id}")
+    logger.info(f"From User: {message.from_user.id} - {getattr(message.from_user, 'username', 'No username')}")
     
-    # Create keyboard with help button
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
+    # Track what kind of forward this is
+    has_from_chat = message.forward_from_chat is not None
+    has_from_user = message.forward_from is not None
+    has_sender_name = getattr(message, 'forward_sender_name', None) is not None
+    has_origin = hasattr(message, 'forward_origin')
+    
+    # Log the forward type
+    logger.info(f"Forward type: from_chat={has_from_chat}, from_user={has_from_user}, sender_name={has_sender_name}, has_origin={has_origin}")
+    
+    # Start building the response message
+    forward_info = f"📨 <b>Forwarded Message Info</b>\n\n"
+    success = False
+    
+    # Keyboard for when we need help button
+    help_keyboard = InlineKeyboardMarkup(row_width=1)
+    help_keyboard.add(
         InlineKeyboardButton("❓ Why can't I get the group ID?", callback_data="group_id_help")
     )
     
-    # Create a detailed explanation
+    # Case 1: We have forward_from_chat - this is the most reliable case
+    if has_from_chat:
+        chat = message.forward_from_chat
+        forward_info += f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
+        chat_type = chat.type
+        forward_info += f"📋 <b>Chat Type</b>: {chat_type}\n"
+        
+        if getattr(chat, 'title', None):
+            forward_info += f"📢 <b>Title</b>: {chat.title}\n"
+        
+        if getattr(chat, 'username', None):
+            forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
+            forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
+            
+        forward_info += f"\n✅ <b>SUCCESS</b>: The full {chat_type.lower()} ID was successfully retrieved!"
+        success = True
+    
+    # Case 2: We have forward_from - this is a user forward
+    elif has_from_user:
+        user = message.forward_from
+        forward_info += f"👤 <b>Forwarded from User</b>\n"
+        forward_info += f"🆔 <b>User ID</b>: <code>{user.id}</code>\n"
+        
+        if getattr(user, 'username', None):
+            forward_info += f"👤 <b>Username</b>: @{user.username}\n"
+            forward_info += f"🔗 <b>Link</b>: https://t.me/{user.username}\n"
+        
+        name_parts = []
+        if getattr(user, 'first_name', None):
+            name_parts.append(user.first_name)
+        if getattr(user, 'last_name', None):
+            name_parts.append(user.last_name)
+            
+        if name_parts:
+            forward_info += f"👤 <b>Name</b>: {' '.join(name_parts)}\n"
+            
+        forward_info += f"\n✅ <b>SUCCESS</b>: The user ID was successfully retrieved!"
+        success = True
+    
+    # Case 3: We have a hidden sender (privacy settings enabled)
+    elif has_sender_name:
+        forward_info += (
+            f"👤 <b>Forwarded from</b>: {message.forward_sender_name}\n\n"
+            f"❌ <b>ID NOT AVAILABLE</b>\n\n"
+            f"This user has <b>privacy settings enabled</b> that prevent obtaining their ID from forwarded messages.\n\n"
+            f"Note: Only the name is visible due to the user's privacy settings."
+        )
+    
+    # Case 4 (complex): We have forward_origin - try to extract information
+    elif has_origin:
+        # Try to get the origin type
+        origin_type = getattr(message.forward_origin, 'type', 'unknown')
+        forward_info += f"🔄 <b>Origin Type</b>: {origin_type}\n\n"
+        
+        # 4.1: Check if we have chat info in the origin
+        if hasattr(message.forward_origin, 'chat') and message.forward_origin.chat:
+            chat = message.forward_origin.chat
+            forward_info += f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
+            chat_type = getattr(chat, 'type', 'unknown')
+            forward_info += f"📋 <b>Chat Type</b>: {chat_type}\n"
+            
+            if getattr(chat, 'title', None):
+                forward_info += f"📢 <b>Title</b>: {chat.title}\n"
+            
+            if getattr(chat, 'username', None):
+                forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
+                forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
+                
+            forward_info += f"\n✅ <b>SUCCESS</b>: The full {chat_type.lower()} ID was successfully retrieved!"
+            success = True
+        
+        # 4.2: Check if we have sender_chat in the origin
+        elif hasattr(message.forward_origin, 'sender_chat') and message.forward_origin.sender_chat:
+            chat = message.forward_origin.sender_chat
+            forward_info += f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
+            chat_type = getattr(chat, 'type', 'unknown')
+            forward_info += f"📋 <b>Chat Type</b>: {chat_type}\n"
+            
+            if getattr(chat, 'title', None):
+                forward_info += f"📢 <b>Title</b>: {chat.title}\n"
+            
+            if getattr(chat, 'username', None):
+                forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
+                forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
+                
+            forward_info += f"\n✅ <b>SUCCESS</b>: The full {chat_type.lower()} ID was successfully retrieved!"
+            success = True
+        
+        # 4.3: Check if we have sender in the origin
+        elif hasattr(message.forward_origin, 'sender_user') and message.forward_origin.sender_user:
+            user = message.forward_origin.sender_user
+            forward_info += f"👤 <b>Forwarded from User</b>\n"
+            forward_info += f"🆔 <b>User ID</b>: <code>{user.id}</code>\n"
+            
+            if getattr(user, 'username', None):
+                forward_info += f"👤 <b>Username</b>: @{user.username}\n"
+                forward_info += f"🔗 <b>Link</b>: https://t.me/{user.username}\n"
+            
+            name_parts = []
+            if getattr(user, 'first_name', None):
+                name_parts.append(user.first_name)
+            if getattr(user, 'last_name', None):
+                name_parts.append(user.last_name)
+                
+            if name_parts:
+                forward_info += f"👤 <b>Name</b>: {' '.join(name_parts)}\n"
+                
+            forward_info += f"\n✅ <b>SUCCESS</b>: The user ID was successfully retrieved!"
+            success = True
+        
+        # 4.4: No useful information available
+        else:
+            # This is likely a public group where we can't get the ID
+            forward_info += (
+                f"❌ <b>UNABLE TO GET GROUP ID</b>\n\n"
+                f"Due to Telegram's API limitations, this bot cannot extract the original group ID from this forwarded message.\n\n"
+                f"This typically happens with public groups where the bot is not a member.\n\n"
+                f"💡 <b>Solutions:</b>\n"
+                f"1. Add this bot to the group directly\n"
+                f"2. Forward a message from a channel or a private group\n"
+                f"3. If you're an admin, temporarily toggle the group to private, forward a message, then set it back\n\n"
+                f"If the group has an @username, you can access it via the API with that username instead of an ID."
+            )
+    
+    # Case 5: Fallback - we don't have any information
+    else:
+        forward_info += (
+            f"❌ <b>UNABLE TO GET SOURCE INFORMATION</b>\n\n"
+            f"This forwarded message doesn't contain identifiable information about its source.\n\n"
+            f"This could be due to privacy settings or a limitation in Telegram's API."
+        )
+    
+    # Check for mentions in the text (might help identify the source)
+    mentioned_entities = []
+    if hasattr(message, 'entities') and message.entities and hasattr(message, 'text') and message.text:
+        for entity in message.entities:
+            if entity.type == 'mention':
+                mention_text = message.text[entity.offset:entity.offset + entity.length]
+                mentioned_entities.append(mention_text)
+                
+        if mentioned_entities:
+            forward_info += f"\n\n<b>Mentions in text</b>: {', '.join(mentioned_entities)}"
+    
+    # Send the appropriate response
+    if success:
+        await message.reply(forward_info, parse_mode="HTML")
+    else:
+        await message.reply(forward_info, parse_mode="HTML", reply_markup=help_keyboard)
     forward_info = (
         f"📨 <b>Forwarded Message Info</b>\n\n"
         f"❌ <b>UNABLE TO GET GROUP ID</b>\n\n"
