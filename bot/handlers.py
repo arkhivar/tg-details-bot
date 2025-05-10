@@ -500,13 +500,87 @@ async def public_group_forward_handler(message: types.Message):
     if hasattr(message, 'to_python'):
         logger.info(f"Message data: {message.to_python()}")
     
+    # Extract as much information as possible from the forwarded message
+    has_forward_origin = hasattr(message, 'forward_origin')
+    has_forward_from = message.forward_from is not None
+    has_forward_from_chat = message.forward_from_chat is not None
+    has_forward_sender_name = hasattr(message, 'forward_sender_name') and message.forward_sender_name
+    
+    logger.info(f"Forward detection: origin={has_forward_origin}, from={has_forward_from}, from_chat={has_forward_from_chat}, sender_name={has_forward_sender_name}")
+    
     # Create keyboard with help button
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
         InlineKeyboardButton("❓ Why can't I get the group ID?", callback_data="group_id_help")
     )
     
-    # Create a detailed explanation
+    # First try to get direct chat information if available
+    if has_forward_from_chat:
+        # This is the best case - we have direct chat info
+        chat = message.forward_from_chat
+        forward_info = (
+            f"📨 <b>Forwarded Message Info</b>\n\n"
+            f"✅ <b>SUCCESS</b>: Chat information found!\n\n"
+            f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
+            f"📋 <b>Chat Type</b>: {chat.type}\n"
+        )
+        
+        if getattr(chat, 'title', None):
+            forward_info += f"📢 <b>Title</b>: {chat.title}\n"
+        
+        if getattr(chat, 'username', None):
+            forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
+            forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
+        
+        await message.reply(forward_info, parse_mode="HTML")
+        return
+    
+    # Second, try to extract from forward_origin
+    if has_forward_origin:
+        origin_type = getattr(message.forward_origin, 'type', 'unknown')
+        logger.info(f"Forward origin type: {origin_type}")
+        
+        # Check if we have sender_chat in origin
+        if hasattr(message.forward_origin, 'sender_chat') and message.forward_origin.sender_chat:
+            chat = message.forward_origin.sender_chat
+            forward_info = (
+                f"📨 <b>Forwarded Message Info</b>\n\n"
+                f"✅ <b>SUCCESS</b>: Chat information found!\n\n"
+                f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
+                f"📋 <b>Chat Type</b>: {getattr(chat, 'type', 'unknown')}\n"
+            )
+            
+            if getattr(chat, 'title', None):
+                forward_info += f"📢 <b>Title</b>: {chat.title}\n"
+            
+            if getattr(chat, 'username', None):
+                forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
+                forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
+            
+            await message.reply(forward_info, parse_mode="HTML")
+            return
+        
+        # Check if we have direct chat attribute
+        if hasattr(message.forward_origin, 'chat') and message.forward_origin.chat:
+            chat = message.forward_origin.chat
+            forward_info = (
+                f"📨 <b>Forwarded Message Info</b>\n\n"
+                f"✅ <b>SUCCESS</b>: Chat information found!\n\n"
+                f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
+                f"📋 <b>Chat Type</b>: {getattr(chat, 'type', 'unknown')}\n"
+            )
+            
+            if getattr(chat, 'title', None):
+                forward_info += f"📢 <b>Title</b>: {chat.title}\n"
+            
+            if getattr(chat, 'username', None):
+                forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
+                forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
+            
+            await message.reply(forward_info, parse_mode="HTML")
+            return
+    
+    # If we got here, we couldn't get the group ID - create detailed explanation
     forward_info = (
         f"📨 <b>Forwarded Message Info</b>\n\n"
         f"❌ <b>UNABLE TO GET GROUP ID</b>\n\n"
@@ -521,21 +595,52 @@ async def public_group_forward_handler(message: types.Message):
     
     # Try to extract any identifiable information
     if hasattr(message, 'forward_origin') and message.forward_origin:
-        # Get origin type
+        # Get any user information if available
+        if hasattr(message.forward_origin, 'sender_user') and message.forward_origin.sender_user:
+            user = message.forward_origin.sender_user
+            forward_info += f"\n👤 <b>User ID</b>: <code>{user.id}</code>\n"
+            
+            if getattr(user, 'username', None):
+                forward_info += f"👤 <b>Username</b>: @{user.username}\n"
+                forward_info += f"🔗 <b>Link</b>: https://t.me/{user.username}\n"
+            
+            name_parts = []
+            if getattr(user, 'first_name', None):
+                name_parts.append(user.first_name)
+            if getattr(user, 'last_name', None):
+                name_parts.append(user.last_name)
+                
+            if name_parts:
+                forward_info += f"👤 <b>Name</b>: {' '.join(name_parts)}\n\n"
+                forward_info += f"⚠️ <i>This is the user's ID, not the group ID. See 'Why can't I get the group ID' button below.</i>"
         origin_type = getattr(message.forward_origin, 'type', 'unknown')
         forward_info += f"\n\n<b>Origin Type</b>: {origin_type}"
         
         # Try to extract any identifiable information from entities
+        # Check for mentions in the text (might help identify the source)
+        mentioned_entities = []
+        text_mentioned_users = []
+        
         if hasattr(message, 'entities') and message.entities and hasattr(message, 'text') and message.text:
-            mentioned_entities = []
             for entity in message.entities:
                 if entity.type == 'mention':
-                    mention_text = message.text[entity.offset:entity.offset + entity.length] 
+                    mention_text = message.text[entity.offset:entity.offset + entity.length]
                     mentioned_entities.append(mention_text)
+                elif entity.type == 'text_mention' and hasattr(entity, 'user'):
+                    user = entity.user
+                    user_text = message.text[entity.offset:entity.offset + entity.length]
+                    user_info = f"{user_text} (ID: {user.id})"
+                    text_mentioned_users.append(user_info)
                     
+            # Add mentions to the message if we found any
             if mentioned_entities:
-                forward_info += f"\n\n📢 <b>Group might be</b>: {', '.join(mentioned_entities)}"
+                forward_info += f"\n\n📢 <b>Mentioned</b>: {', '.join(mentioned_entities)}\n"
+                forward_info += f"⚠️ <i>This might be the group the message is from, but we can't confirm.</i>"
+                
+            if text_mentioned_users:
+                forward_info += f"\n\n👤 <b>Text Mentioned Users</b>: {', '.join(text_mentioned_users)}\n"
     
+    # Add the help button to get the detailed explanation
     await message.reply(forward_info, parse_mode="HTML", reply_markup=keyboard)
 
 async def simple_forward_handler(message: types.Message):
