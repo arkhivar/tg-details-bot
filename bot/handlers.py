@@ -709,9 +709,12 @@ async def forward_handler(message: types.Message):
             if name_parts:
                 forward_info += f"👤 <b>Name</b>: {' '.join(name_parts)}\n"
         
-        if hasattr(message.forward_origin, 'chat'):
-            chat = message.forward_origin.chat
+        # Handle sender_chat (important for group/supergroup/channel forwards)
+        if hasattr(message.forward_origin, 'sender_chat') and message.forward_origin.sender_chat:
+            chat = message.forward_origin.sender_chat
             forward_info += f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
+            chat_type = getattr(chat, 'type', 'unknown')
+            forward_info += f"📋 <b>Chat Type</b>: {chat_type}\n"
             
             if getattr(chat, 'title', None):
                 forward_info += f"📢 <b>Title</b>: {chat.title}\n"
@@ -719,6 +722,24 @@ async def forward_handler(message: types.Message):
             if getattr(chat, 'username', None):
                 forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
                 forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
+                
+            forward_info += f"\n✅ <b>SUCCESS</b>: The full {chat_type.lower()} ID was successfully retrieved!"
+        
+        # Handle chat in forward_origin (alternative way)
+        elif hasattr(message.forward_origin, 'chat'):
+            chat = message.forward_origin.chat
+            forward_info += f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
+            chat_type = getattr(chat, 'type', 'unknown')
+            forward_info += f"📋 <b>Chat Type</b>: {chat_type}\n"
+            
+            if getattr(chat, 'title', None):
+                forward_info += f"📢 <b>Title</b>: {chat.title}\n"
+            
+            if getattr(chat, 'username', None):
+                forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
+                forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
+                
+            forward_info += f"\n✅ <b>SUCCESS</b>: The full {chat_type.lower()} ID was successfully retrieved!"
         
         # Check if the message text contains mentions or text_mentions (users without username)
         mentioned_entities = []
