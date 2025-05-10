@@ -91,11 +91,7 @@ def register_handlers(dp, db_enabled=False):
     
     # Handler for forwarded messages (to get original chat ID)
     dp.register_message_handler(forward_handler, lambda message: (
-        message.forward_from_chat is not None or 
-        message.forward_from is not None or 
-        getattr(message, 'forward_sender_name', None) is not None or
-        getattr(message, 'forward_origin', None) is not None or
-        getattr(message, 'forward_date', None) is not None
+        hasattr(message, 'forward_date') and message.forward_date is not None
     ), content_types=types.ContentTypes.ANY)
     
     # General message handler (will provide info when bot is @mentioned)
