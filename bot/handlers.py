@@ -90,7 +90,7 @@ def register_handlers(dp, db_enabled=False):
     dp.register_message_handler(new_chat_members, content_types=types.ContentTypes.NEW_CHAT_MEMBERS)
     
     # Handler for forwarded messages (to get original chat ID)
-    dp.register_message_handler(forward_handler, lambda message: message.forward_from_chat is not None, content_types=types.ContentTypes.ANY)
+    dp.register_message_handler(forward_handler, lambda message: message.forward_from_chat is not None or message.forward_from is not None, content_types=types.ContentTypes.ANY)
     
     # General message handler (will provide info when bot is @mentioned)
     dp.register_message_handler(message_handler, content_types=types.ContentTypes.TEXT)
@@ -422,24 +422,23 @@ async def new_chat_members(message: types.Message):
                     logger.error(f"Failed to send fallback welcome message: {inner_e}")
 
 async def forward_handler(message: types.Message):
-    """Handler for forwarded messages - detects the original chat ID"""
-    # Extract the forwarded chat info
-    forward_from_chat = message.forward_from_chat
+    """Handler for forwarded messages - detects the original chat ID or user ID"""
+    # Create a nice formatted response with inline button options
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("ℹ️ More Info", callback_data="get_info"),
+        InlineKeyboardButton("❓ Help", callback_data="show_help")
+    )
     
-    if forward_from_chat:
+    # First case: message from a chat (group/channel)
+    if message.forward_from_chat:
+        forward_from_chat = message.forward_from_chat
         forward_chat_id = forward_from_chat.id
         forward_chat_type = forward_from_chat.type
         forward_chat_title = getattr(forward_from_chat, 'title', 'Unknown')
         
         # Log the detection
         logger.info(f"Forwarded message detected from chat: {forward_chat_id} ({forward_chat_type})")
-        
-        # Create a nice formatted response with inline button options
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(
-            InlineKeyboardButton("ℹ️ More Info", callback_data="get_info"),
-            InlineKeyboardButton("❓ Help", callback_data="show_help")
-        )
         
         # Build more detailed message when possible
         forward_info = (
@@ -456,6 +455,105 @@ async def forward_handler(message: types.Message):
         if getattr(forward_from_chat, 'username', None):
             forward_info += f"👤 <b>Username</b>: @{forward_from_chat.username}\n"
             forward_info += f"🔗 <b>Link</b>: https://t.me/{forward_from_chat.username}\n"
+        
+        await message.reply(
+            forward_info,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    
+    # Second case: message from a user
+    elif message.forward_from:
+        forward_from = message.forward_from
+        forward_user_id = forward_from.id
+        
+        # Log the detection
+        logger.info(f"Forwarded message detected from user: {forward_user_id}")
+        
+        # Build user information
+        forward_info = (
+            f"📨 <b>Forwarded Message Info</b>\n\n"
+            f"🆔 <b>Original User ID</b>: <code>{forward_user_id}</code>\n"
+            f"📋 <b>Type</b>: User\n"
+        )
+        
+        # Add name information
+        name_parts = []
+        if getattr(forward_from, 'first_name', None):
+            name_parts.append(forward_from.first_name)
+        if getattr(forward_from, 'last_name', None):
+            name_parts.append(forward_from.last_name)
+            
+        if name_parts:
+            forward_info += f"👤 <b>Name</b>: {' '.join(name_parts)}\n"
+            
+        # Add username if available
+        if getattr(forward_from, 'username', None):
+            forward_info += f"👤 <b>Username</b>: @{forward_from.username}\n"
+            forward_info += f"🔗 <b>Profile Link</b>: https://t.me/{forward_from.username}\n"
+            
+        await message.reply(
+            forward_info,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    # Third case: hidden user (privacy settings restrict forwarding)
+    elif hasattr(message, 'forward_sender_name') and message.forward_sender_name:
+        logger.info(f"Forwarded message with hidden sender detected")
+        
+        forward_info = (
+            f"📨 <b>Forwarded Message Info</b>\n\n"
+            f"ℹ️ This message was forwarded from a user who has enabled privacy settings that restrict forwarding their messages.\n\n"
+            f"👤 <b>Sender Name</b>: {message.forward_sender_name}\n"
+            f"⚠️ <b>User ID not available</b> due to privacy settings.\n"
+        )
+        
+        await message.reply(
+            forward_info,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    
+    # Fourth case: other forward types (e.g. from hidden channels)
+    elif hasattr(message, 'forward_origin') and message.forward_origin:
+        forward_type = getattr(message.forward_origin, 'type', 'unknown')
+        logger.info(f"Forwarded message with origin type '{forward_type}' detected")
+        
+        # Create a basic response for any other forward type
+        forward_info = (
+            f"📨 <b>Forwarded Message Info</b>\n\n"
+            f"🔍 <b>Origin Type</b>: {forward_type}\n"
+        )
+        
+        # Try to extract any available information from the forward_origin
+        if hasattr(message.forward_origin, 'sender_user'):
+            sender = message.forward_origin.sender_user
+            forward_info += f"🆔 <b>User ID</b>: <code>{sender.id}</code>\n"
+            
+            if getattr(sender, 'username', None):
+                forward_info += f"👤 <b>Username</b>: @{sender.username}\n"
+                
+            name_parts = []
+            if getattr(sender, 'first_name', None):
+                name_parts.append(sender.first_name)
+            if getattr(sender, 'last_name', None):
+                name_parts.append(sender.last_name)
+                
+            if name_parts:
+                forward_info += f"👤 <b>Name</b>: {' '.join(name_parts)}\n"
+        
+        if hasattr(message.forward_origin, 'chat'):
+            chat = message.forward_origin.chat
+            forward_info += f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
+            
+            if getattr(chat, 'title', None):
+                forward_info += f"📢 <b>Title</b>: {chat.title}\n"
+            
+            if getattr(chat, 'username', None):
+                forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
+        
+        forward_info += f"\n⚠️ <i>Note: Some information may be hidden due to privacy settings.</i>"
         
         await message.reply(
             forward_info,
