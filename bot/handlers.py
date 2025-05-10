@@ -90,7 +90,22 @@ def register_handlers(dp, db_enabled=False):
     # New chat members handler
     dp.register_message_handler(new_chat_members, content_types=types.ContentTypes.NEW_CHAT_MEMBERS)
     
-    # Handler for public group forwards - more complex detection
+    # Register specialized forward handlers first - order matters!
+    
+    # First: Handler for direct channel forwards where we can get the chat ID directly
+    dp.register_message_handler(
+        simple_forward_handler,
+        lambda message: (
+            hasattr(message, 'forward_date') and message.forward_date is not None and
+            (message.forward_from_chat is not None or
+             (hasattr(message, 'forward_origin') and 
+              hasattr(message.forward_origin, 'chat') and 
+              message.forward_origin.chat is not None))
+        ),
+        content_types=types.ContentTypes.ANY
+    )
+    
+    # Second: Handler for public group forwards that need special explanation
     dp.register_message_handler(
         public_group_forward_handler,
         lambda message: (
@@ -118,7 +133,7 @@ def register_handlers(dp, db_enabled=False):
         content_types=types.ContentTypes.ANY
     )
     
-    # Fallback handler for any other forwards
+    # Last: Fallback handler for any remaining forwards
     dp.register_message_handler(
         simple_forward_handler, 
         lambda message: hasattr(message, 'forward_date') and message.forward_date is not None,
