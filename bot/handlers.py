@@ -124,6 +124,7 @@ async def start_command(message: types.Message):
             "I can help you get technical information about chats. "
             "This is useful for setting up other bots.\n\n"
             "Add me to a group or channel and use /info to see details.\n"
+            "Forward any message from a group/channel to me to get its chat ID.\n"
             "Use /help to see all available commands.",
             parse_mode="HTML",
             reply_markup=keyboard
@@ -589,6 +590,29 @@ async def forward_handler(message: types.Message):
                 forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
         
         forward_info += f"\n⚠️ <i>Note: Some information may be hidden due to privacy settings.</i>"
+        
+        await message.reply(
+            forward_info,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    
+    # Default case: if none of the above conditions are met but it's still a forwarded message
+    else:
+        logger.info(f"Forwarded message detected but couldn't identify a specific forward type")
+        
+        # Get any available date info
+        forward_date = getattr(message, 'forward_date', None)
+        date_str = forward_date.strftime("%Y-%m-%d %H:%M UTC") if forward_date else "Unknown"
+        
+        # Create a generic response
+        forward_info = (
+            f"📨 <b>Forwarded Message Info</b>\n\n"
+            f"⚠️ This message appears to be forwarded, but I couldn't identify the source details.\n\n"
+            f"📅 <b>Forward Date</b>: {date_str}\n"
+            f"💬 <b>Message Type</b>: {message.content_type}\n\n"
+            f"<i>Try forwarding a message directly from the group or channel you want to get information about.</i>"
+        )
         
         await message.reply(
             forward_info,
