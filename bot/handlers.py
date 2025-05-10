@@ -89,6 +89,9 @@ def register_handlers(dp, db_enabled=False):
     # New chat members handler
     dp.register_message_handler(new_chat_members, content_types=types.ContentTypes.NEW_CHAT_MEMBERS)
     
+    # Handler for forwarded messages (to get original chat ID)
+    dp.register_message_handler(forward_handler, lambda message: message.forward_from_chat is not None, content_types=types.ContentTypes.ANY)
+    
     # General message handler (will provide info when bot is @mentioned)
     dp.register_message_handler(message_handler, content_types=types.ContentTypes.TEXT)
     
@@ -180,6 +183,8 @@ async def help_command(message: types.Message):
         "/type - Show the chat type (private, group, supergroup, channel)\n"
         "/members - Get the number of members (when available)\n"
         "/admins - Get information about group administrators\n\n"
+        "📨 <b>Forward Detection</b>:\n"
+        "Forward any message from a group or channel to me in private chat, and I'll instantly show you the source chat ID.\n\n"
         "You can also @mention me in a message to get basic chat info.\n\n"
         "<i>Note: Some information may be limited based on my permissions and the chat type.</i>"
     )
@@ -415,6 +420,48 @@ async def new_chat_members(message: types.Message):
                     )
                 except Exception as inner_e:
                     logger.error(f"Failed to send fallback welcome message: {inner_e}")
+
+async def forward_handler(message: types.Message):
+    """Handler for forwarded messages - detects the original chat ID"""
+    # Extract the forwarded chat info
+    forward_from_chat = message.forward_from_chat
+    
+    if forward_from_chat:
+        forward_chat_id = forward_from_chat.id
+        forward_chat_type = forward_from_chat.type
+        forward_chat_title = getattr(forward_from_chat, 'title', 'Unknown')
+        
+        # Log the detection
+        logger.info(f"Forwarded message detected from chat: {forward_chat_id} ({forward_chat_type})")
+        
+        # Create a nice formatted response with inline button options
+        keyboard = InlineKeyboardMarkup(row_width=2)
+        keyboard.add(
+            InlineKeyboardButton("ℹ️ More Info", callback_data="get_info"),
+            InlineKeyboardButton("❓ Help", callback_data="show_help")
+        )
+        
+        # Build more detailed message when possible
+        forward_info = (
+            f"📨 <b>Forwarded Message Info</b>\n\n"
+            f"🆔 <b>Original Chat ID</b>: <code>{forward_chat_id}</code>\n"
+            f"📋 <b>Chat Type</b>: {forward_chat_type}\n"
+        )
+        
+        # Add title for groups/channels
+        if forward_chat_type in ['group', 'supergroup', 'channel']:
+            forward_info += f"📢 <b>Title</b>: {forward_chat_title}\n"
+            
+        # Add username if available
+        if getattr(forward_from_chat, 'username', None):
+            forward_info += f"👤 <b>Username</b>: @{forward_from_chat.username}\n"
+            forward_info += f"🔗 <b>Link</b>: https://t.me/{forward_from_chat.username}\n"
+        
+        await message.reply(
+            forward_info,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
 
 async def message_handler(message: types.Message):
     """General message handler"""
