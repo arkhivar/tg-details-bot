@@ -89,19 +89,35 @@ def register_handlers(dp, db_enabled=False):
     # New chat members handler
     dp.register_message_handler(new_chat_members, content_types=types.ContentTypes.NEW_CHAT_MEMBERS)
     
-    # Handler for specific public group forwards
+    # Handler for public group forwards - more complex detection
     dp.register_message_handler(
         public_group_forward_handler,
         lambda message: (
-            hasattr(message, 'forward_date') and message.forward_date is not None and
-            not message.forward_from and not message.forward_from_chat and
-            hasattr(message, 'forward_origin') and 
-            getattr(message.forward_origin, 'type', '') == 'channel'
+            hasattr(message, 'forward_date') and message.forward_date is not None and 
+            (
+                # Direct check for group origins
+                (hasattr(message, 'forward_origin') and 
+                 getattr(message.forward_origin, 'type', '') in ['channel', 'chat', 'group']) or
+                
+                # Public group with privacy settings (user origin but text suggests it's from a group)
+                (hasattr(message, 'caption') and message.caption and '@' in message.caption) or
+                (hasattr(message, 'text') and message.text and '@' in message.text) or
+                
+                # Message has entities that suggest it's from a group but not accessible
+                (hasattr(message, 'caption_entities') and message.caption_entities) or
+                (hasattr(message, 'entities') and message.entities and 
+                 any(e.type == 'mention' for e in message.entities)) or
+                
+                # Message is forwarded from user but has group context clues
+                (hasattr(message, 'forward_from') and message.forward_from and 
+                 hasattr(message, 'text') and message.text and 
+                 ('<' in message.text or '>' in message.text))
+            )
         ),
         content_types=types.ContentTypes.ANY
     )
     
-    # General handler for all other forwarded messages
+    # Fallback handler for any other forwards
     dp.register_message_handler(
         simple_forward_handler, 
         lambda message: hasattr(message, 'forward_date') and message.forward_date is not None,
@@ -1080,7 +1096,28 @@ async def button_callback(callback_query: types.CallbackQuery):
     action = callback_query.data
     
     try:
-        if action == "get_id":
+        if action == "group_id_help":
+            # Provide detailed technical explanation about group IDs
+            detailed_explanation = (
+                "<b>📚 Technical Explanation: Group ID Limitations</b>\n\n"
+                "When you forward a message from a public group, Telegram deliberately "
+                "hides the source group ID for privacy reasons. This is part of Telegram's API design.\n\n"
+                "<b>Why this happens:</b>\n"
+                "• Public groups with privacy settings can hide their messages' origin\n"
+                "• Only channels and private groups fully expose their ID in forwards\n"
+                "• This protection prevents tracking and data collection across groups\n\n"
+                "<b>Technical alternatives:</b>\n"
+                "• If the group has a @username, you can use that in API calls\n"
+                "• Bot API accepts usernames (e.g. @group_name) in most places where chat_id is needed\n"
+                "• For admin-only actions, join the group with the bot first\n\n"
+                "This behavior is by design in Telegram's architecture and not a limitation of this bot."
+            )
+            
+            # The help info is sent as a new message (reply), not replacing the original
+            await callback_query.message.reply(detailed_explanation, parse_mode="HTML")
+            await callback_query.answer("Technical explanation provided")
+            
+        elif action == "get_id":
             # Create back button
             keyboard = InlineKeyboardMarkup()
             keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
