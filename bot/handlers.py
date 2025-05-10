@@ -90,7 +90,13 @@ def register_handlers(dp, db_enabled=False):
     dp.register_message_handler(new_chat_members, content_types=types.ContentTypes.NEW_CHAT_MEMBERS)
     
     # Handler for forwarded messages (to get original chat ID)
-    dp.register_message_handler(forward_handler, lambda message: message.forward_from_chat is not None or message.forward_from is not None, content_types=types.ContentTypes.ANY)
+    dp.register_message_handler(forward_handler, lambda message: (
+        message.forward_from_chat is not None or 
+        message.forward_from is not None or 
+        getattr(message, 'forward_sender_name', None) is not None or
+        getattr(message, 'forward_origin', None) is not None or
+        getattr(message, 'forward_date', None) is not None
+    ), content_types=types.ContentTypes.ANY)
     
     # General message handler (will provide info when bot is @mentioned)
     dp.register_message_handler(message_handler, content_types=types.ContentTypes.TEXT)
@@ -423,6 +429,35 @@ async def new_chat_members(message: types.Message):
 
 async def forward_handler(message: types.Message):
     """Handler for forwarded messages - detects the original chat ID or user ID"""
+    # First log all message details for debugging
+    logger.info(f"=== FORWARD DEBUG INFO ===")
+    logger.info(f"Message ID: {message.message_id}")
+    logger.info(f"From User: {message.from_user.id} - {getattr(message.from_user, 'username', 'No username')}")
+    logger.info(f"Chat: {message.chat.id} ({message.chat.type})")
+    logger.info(f"Has forward_from: {message.forward_from is not None}")
+    logger.info(f"Has forward_from_chat: {message.forward_from_chat is not None}")
+    logger.info(f"Has forward_from_message_id: {getattr(message, 'forward_from_message_id', None) is not None}")
+    logger.info(f"Has forward_signature: {getattr(message, 'forward_signature', None) is not None}")
+    logger.info(f"Has forward_sender_name: {getattr(message, 'forward_sender_name', None) is not None}")
+    logger.info(f"Has forward_date: {getattr(message, 'forward_date', None) is not None}")
+    
+    # Check if message has forward_origin attribute and log what's inside
+    if hasattr(message, 'forward_origin'):
+        logger.info(f"Has forward_origin: True")
+        logger.info(f"forward_origin type: {type(message.forward_origin)}")
+        logger.info(f"forward_origin attributes: {dir(message.forward_origin)}")
+        logger.info(f"forward_origin type attr: {getattr(message.forward_origin, 'type', 'unknown')}")
+        
+        # Try to extract more info from forward_origin
+        if hasattr(message.forward_origin, 'sender_user'):
+            logger.info(f"forward_origin has sender_user: {message.forward_origin.sender_user.id}")
+        if hasattr(message.forward_origin, 'chat'):
+            logger.info(f"forward_origin has chat: {message.forward_origin.chat.id}")
+    else:
+        logger.info(f"Has forward_origin: False")
+        
+    logger.info(f"=== END DEBUG INFO ===")
+        
     # Create a nice formatted response with inline button options
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
