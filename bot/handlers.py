@@ -85,6 +85,7 @@ def register_handlers(dp, db_enabled=False):
     dp.register_message_handler(members_command, commands=['members'])
     dp.register_message_handler(hello_command, commands=['hello'])  # Added explicit hello command
     dp.register_message_handler(admins_command, commands=['admins'])  # Admin information command
+    dp.register_message_handler(forward_help_command, commands=['forward_help'])  # Special command to explain forward limitations
     
     # New chat members handler
     dp.register_message_handler(new_chat_members, content_types=types.ContentTypes.NEW_CHAT_MEMBERS)
@@ -206,7 +207,8 @@ async def help_command(message: types.Message):
         InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
         InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
         InlineKeyboardButton("👥 Members", callback_data="get_members"),
-        InlineKeyboardButton("👮‍♂️ Admins", callback_data="get_admins")
+        InlineKeyboardButton("👮‍♂️ Admins", callback_data="get_admins"),
+        InlineKeyboardButton("❓ Group ID Help", callback_data="group_id_help")
     )
     
     help_text = (
@@ -216,7 +218,8 @@ async def help_command(message: types.Message):
         "/hello - Force the bot to respond with basic chat info\n"
         "/type - Show the chat type (private, group, supergroup, channel)\n"
         "/members - Get the number of members (when available)\n"
-        "/admins - Get information about group administrators\n\n"
+        "/admins - Get information about group administrators\n"
+        "/forward_help - Explain why group IDs from forwards sometimes don't work\n\n"
         "📨 <b>Get Group/Channel IDs</b>:\n"
         "<b>Method 1 (Recommended)</b>: Add me to the group/channel and use /id command.\n"
         "<b>Method 2</b>: Forward a message from a public group/channel, and I'll show the source chat ID.\n\n"
@@ -225,6 +228,7 @@ async def help_command(message: types.Message):
         "- I'm already a member of that group/channel\n\n"
         "You can also @mention me in a message to get basic chat info.\n\n"
         "👤 <b>User Detection</b>: I can detect both @usernames and users without usernames in forwarded messages.\n\n"
+        "❓ <b>Trouble getting group IDs?</b> Use /forward_help for a detailed explanation.\n\n"
         "<i>Note: Some information may be limited based on my permissions and the chat type.</i>"
     )
     await message.reply(help_text, parse_mode="HTML", reply_markup=keyboard)
@@ -274,6 +278,36 @@ async def members_command(message: types.Message):
         logger.error(f"Error getting members count: {e}")
         await message.reply(f"❌ Error getting member count: {str(e)}")
         
+async def forward_help_command(message: types.Message):
+    """Dedicated command to explain why group IDs might not be available in forwards"""
+    explanation = (
+        "<b>📚 Why Can't I Get Group IDs from Forwards?</b>\n\n"
+        "This is a common issue with Telegram's privacy design:\n\n"
+        "<b>Technical Explanation:</b>\n"
+        "• When forwarding from public groups, Telegram intentionally hides the original group ID\n"
+        "• The forward appears to come from the original sender (user) instead of the group\n"
+        "• This is a privacy feature by design, not a limitation of this bot\n"
+        "• Even in forwards from public groups, Telegram only shows user information\n\n"
+        
+        "<b>Why This Happens:</b>\n"
+        "Telegram does this to prevent tracking and data collection across groups. Only bot developers "
+        "who add their bots to groups can access group IDs directly.\n\n"
+        
+        "<b>Solutions:</b>\n"
+        "1️⃣ <b>Add this bot directly to the group</b> (recommended)\n"
+        "2️⃣ For public groups, use @username instead of ID in API calls\n"
+        "3️⃣ For user accounts (not bots), open forwarded message in Telegram apps and look for the source group link\n"
+        "4️⃣ For private groups, add this bot as member\n\n"
+        
+        "<b>In your screenshot:</b>\n"
+        "The message was detected as a user forward because Telegram provides the user info, not the group info, "
+        "even though it originated in a group.\n\n"
+        
+        "If you need more technical explanations, feel free to ask!"
+    )
+    
+    await message.reply(explanation, parse_mode="HTML")
+
 async def admins_command(message: types.Message):
     """Handler for /admins command - display administrators information"""
     try:
