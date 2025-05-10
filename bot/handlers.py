@@ -125,7 +125,7 @@ async def start_command(message: types.Message):
             "This is useful for setting up other bots.\n\n"
             "Add me to a group or channel and use /info to see details.\n"
             "Forward any message from a group/channel to me to get its chat ID.\n"
-            "Forward a message with @username mentions to see detected groups/users.\n"
+            "Forward a message with @username or text mentions to see detected users and their IDs.\n"
             "Use /help to see all available commands.",
             parse_mode="HTML",
             reply_markup=keyboard
@@ -193,7 +193,8 @@ async def help_command(message: types.Message):
         "/admins - Get information about group administrators\n\n"
         "📨 <b>Forward Detection</b>:\n"
         "Forward any message from a group or channel to me in private chat, and I'll instantly show you the source chat ID.\n"
-        "Forward messages with @username mentions to see detected groups/users even if the original message is not from a group.\n\n"
+        "Forward messages with @username mentions to see detected groups/users.\n"
+        "The bot also detects user mentions without usernames and shows their IDs.\n\n"
         "You can also @mention me in a message to get basic chat info.\n\n"
         "<i>Note: Some information may be limited based on my permissions and the chat type.</i>"
     )
@@ -539,17 +540,28 @@ async def forward_handler(message: types.Message):
             forward_info += f"👤 <b>Username</b>: @{forward_from.username}\n"
             forward_info += f"🔗 <b>Profile Link</b>: https://t.me/{forward_from.username}\n"
         
-        # Check if the message text contains mentions (like @groupname)
+        # Check if the message text contains mentions or text_mentions (users without username)
         mentioned_entities = []
+        text_mentioned_users = []
         if hasattr(message, 'entities') and message.entities and hasattr(message, 'text') and message.text:
             for entity in message.entities:
                 if entity.type == 'mention':
                     mention_text = message.text[entity.offset:entity.offset + entity.length]
                     mentioned_entities.append(mention_text)
+                elif entity.type == 'text_mention' and hasattr(entity, 'user'):
+                    user = entity.user
+                    user_text = message.text[entity.offset:entity.offset + entity.length]
+                    user_info = f"{user_text} (ID: {user.id})"
+                    text_mentioned_users.append(user_info)
             
             if mentioned_entities:
                 forward_info += f"\n📢 <b>Mentioned</b>: {', '.join(mentioned_entities)}\n"
-                forward_info += f"⚠️ <i>Note: To get information about these groups/users, you need to forward a message directly from them.</i>\n"
+            
+            if text_mentioned_users:
+                forward_info += f"\n👤 <b>Text Mentioned Users</b>: {', '.join(text_mentioned_users)}\n"
+                
+            if mentioned_entities or text_mentioned_users:
+                forward_info += f"⚠️ <i>Note: To get complete information about these groups/users, you need to forward a message directly from them.</i>\n"
                     
         await message.reply(
             forward_info,
@@ -568,17 +580,28 @@ async def forward_handler(message: types.Message):
             f"⚠️ <b>User ID not available</b> due to privacy settings.\n"
         )
         
-        # Check if the message text contains mentions (like @groupname)
+        # Check if the message text contains mentions or text_mentions (users without username)
         mentioned_entities = []
+        text_mentioned_users = []
         if hasattr(message, 'entities') and message.entities and hasattr(message, 'text') and message.text:
             for entity in message.entities:
                 if entity.type == 'mention':
                     mention_text = message.text[entity.offset:entity.offset + entity.length]
                     mentioned_entities.append(mention_text)
+                elif entity.type == 'text_mention' and hasattr(entity, 'user'):
+                    user = entity.user
+                    user_text = message.text[entity.offset:entity.offset + entity.length]
+                    user_info = f"{user_text} (ID: {user.id})"
+                    text_mentioned_users.append(user_info)
             
             if mentioned_entities:
                 forward_info += f"\n📢 <b>Mentioned</b>: {', '.join(mentioned_entities)}\n"
-                forward_info += f"⚠️ <i>Note: To get information about these groups/users, you need to forward a message directly from them.</i>\n"
+            
+            if text_mentioned_users:
+                forward_info += f"\n👤 <b>Text Mentioned Users</b>: {', '.join(text_mentioned_users)}\n"
+                
+            if mentioned_entities or text_mentioned_users:
+                forward_info += f"⚠️ <i>Note: To get complete information about these groups/users, you need to forward a message directly from them.</i>\n"
         
         await message.reply(
             forward_info,
@@ -625,16 +648,25 @@ async def forward_handler(message: types.Message):
                 forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
                 forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
         
-        # Check if the message text contains mentions (like @groupname)
+        # Check if the message text contains mentions or text_mentions (users without username)
         mentioned_entities = []
+        text_mentioned_users = []
         if hasattr(message, 'entities') and message.entities and hasattr(message, 'text') and message.text:
             for entity in message.entities:
                 if entity.type == 'mention':
                     mention_text = message.text[entity.offset:entity.offset + entity.length]
                     mentioned_entities.append(mention_text)
+                elif entity.type == 'text_mention' and hasattr(entity, 'user'):
+                    user = entity.user
+                    user_text = message.text[entity.offset:entity.offset + entity.length]
+                    user_info = f"{user_text} (ID: {user.id})"
+                    text_mentioned_users.append(user_info)
             
             if mentioned_entities:
                 forward_info += f"\n📢 <b>Mentioned</b>: {', '.join(mentioned_entities)}\n"
+            
+            if text_mentioned_users:
+                forward_info += f"\n👤 <b>Text Mentioned Users</b>: {', '.join(text_mentioned_users)}\n"
         
         forward_info += f"\n⚠️ <i>Note: Some information may be hidden due to privacy settings.</i>"
         
@@ -851,6 +883,8 @@ async def button_callback(callback_query: types.CallbackQuery):
                 "/type - Show the chat type (private, group, supergroup, channel)\n"
                 "/members - Get the number of members (when available)\n"
                 "/admins - Get information about group administrators\n\n"
+                "📨 <b>Forward Detection</b>:\n"
+                "Forward messages with @username mentions or text mentions to get user IDs.\n\n"
                 "You can also @mention me in a message to get basic chat info.\n\n"
                 "<i>Note: Some information may be limited based on my permissions and the chat type.</i>"
             )
