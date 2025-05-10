@@ -94,6 +94,14 @@ def register_handlers(dp, db_enabled=False):
         hasattr(message, 'forward_date') and message.forward_date is not None
     ), content_types=types.ContentTypes.ANY)
     
+    # Special handler just for debugging public group forwards
+    dp.register_message_handler(
+        lambda message: logger.critical(f"PUBLIC GROUP FORWARD DEBUG: {message.to_python() if hasattr(message, 'to_python') else 'No to_python method'}"),
+        lambda message: hasattr(message, 'forward_date'),
+        content_types=types.ContentTypes.ANY,
+        state="*"
+    )
+    
     # General message handler (will provide info when bot is @mentioned)
     dp.register_message_handler(message_handler, content_types=types.ContentTypes.TEXT)
     
