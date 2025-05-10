@@ -125,6 +125,7 @@ async def start_command(message: types.Message):
             "This is useful for setting up other bots.\n\n"
             "Add me to a group or channel and use /info to see details.\n"
             "Forward any message from a group/channel to me to get its chat ID.\n"
+            "Forward a message with @username mentions to see detected groups/users.\n"
             "Use /help to see all available commands.",
             parse_mode="HTML",
             reply_markup=keyboard
@@ -191,7 +192,8 @@ async def help_command(message: types.Message):
         "/members - Get the number of members (when available)\n"
         "/admins - Get information about group administrators\n\n"
         "📨 <b>Forward Detection</b>:\n"
-        "Forward any message from a group or channel to me in private chat, and I'll instantly show you the source chat ID.\n\n"
+        "Forward any message from a group or channel to me in private chat, and I'll instantly show you the source chat ID.\n"
+        "Forward messages with @username mentions to see detected groups/users even if the original message is not from a group.\n\n"
         "You can also @mention me in a message to get basic chat info.\n\n"
         "<i>Note: Some information may be limited based on my permissions and the chat type.</i>"
     )
@@ -435,12 +437,21 @@ async def forward_handler(message: types.Message):
     logger.info(f"Message ID: {message.message_id}")
     logger.info(f"From User: {message.from_user.id} - {getattr(message.from_user, 'username', 'No username')}")
     logger.info(f"Chat: {message.chat.id} ({message.chat.type})")
+    logger.info(f"Text: {message.text if hasattr(message, 'text') and message.text else 'No text'}")
     logger.info(f"Has forward_from: {message.forward_from is not None}")
     logger.info(f"Has forward_from_chat: {message.forward_from_chat is not None}")
     logger.info(f"Has forward_from_message_id: {getattr(message, 'forward_from_message_id', None) is not None}")
     logger.info(f"Has forward_signature: {getattr(message, 'forward_signature', None) is not None}")
     logger.info(f"Has forward_sender_name: {getattr(message, 'forward_sender_name', None) is not None}")
     logger.info(f"Has forward_date: {getattr(message, 'forward_date', None) is not None}")
+    
+    # Check if message has entities (like @mentions)
+    if hasattr(message, 'entities') and message.entities:
+        logger.info(f"Has entities: {len(message.entities)}")
+        for i, entity in enumerate(message.entities):
+            entity_type = getattr(entity, 'type', 'unknown')
+            entity_text = message.text[entity.offset:entity.offset + entity.length] if hasattr(message, 'text') and message.text else 'N/A'
+            logger.info(f"Entity {i}: type={entity_type}, text={entity_text}")
     
     # Check if message has forward_origin attribute and log what's inside
     if hasattr(message, 'forward_origin'):
@@ -527,7 +538,19 @@ async def forward_handler(message: types.Message):
         if getattr(forward_from, 'username', None):
             forward_info += f"👤 <b>Username</b>: @{forward_from.username}\n"
             forward_info += f"🔗 <b>Profile Link</b>: https://t.me/{forward_from.username}\n"
+        
+        # Check if the message text contains mentions (like @groupname)
+        mentioned_entities = []
+        if hasattr(message, 'entities') and message.entities and hasattr(message, 'text') and message.text:
+            for entity in message.entities:
+                if entity.type == 'mention':
+                    mention_text = message.text[entity.offset:entity.offset + entity.length]
+                    mentioned_entities.append(mention_text)
             
+            if mentioned_entities:
+                forward_info += f"\n📢 <b>Mentioned</b>: {', '.join(mentioned_entities)}\n"
+                forward_info += f"⚠️ <i>Note: To get information about these groups/users, you need to forward a message directly from them.</i>\n"
+                    
         await message.reply(
             forward_info,
             parse_mode="HTML",
@@ -544,6 +567,18 @@ async def forward_handler(message: types.Message):
             f"👤 <b>Sender Name</b>: {message.forward_sender_name}\n"
             f"⚠️ <b>User ID not available</b> due to privacy settings.\n"
         )
+        
+        # Check if the message text contains mentions (like @groupname)
+        mentioned_entities = []
+        if hasattr(message, 'entities') and message.entities and hasattr(message, 'text') and message.text:
+            for entity in message.entities:
+                if entity.type == 'mention':
+                    mention_text = message.text[entity.offset:entity.offset + entity.length]
+                    mentioned_entities.append(mention_text)
+            
+            if mentioned_entities:
+                forward_info += f"\n📢 <b>Mentioned</b>: {', '.join(mentioned_entities)}\n"
+                forward_info += f"⚠️ <i>Note: To get information about these groups/users, you need to forward a message directly from them.</i>\n"
         
         await message.reply(
             forward_info,
@@ -588,6 +623,18 @@ async def forward_handler(message: types.Message):
             
             if getattr(chat, 'username', None):
                 forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
+                forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
+        
+        # Check if the message text contains mentions (like @groupname)
+        mentioned_entities = []
+        if hasattr(message, 'entities') and message.entities and hasattr(message, 'text') and message.text:
+            for entity in message.entities:
+                if entity.type == 'mention':
+                    mention_text = message.text[entity.offset:entity.offset + entity.length]
+                    mentioned_entities.append(mention_text)
+            
+            if mentioned_entities:
+                forward_info += f"\n📢 <b>Mentioned</b>: {', '.join(mentioned_entities)}\n"
         
         forward_info += f"\n⚠️ <i>Note: Some information may be hidden due to privacy settings.</i>"
         
