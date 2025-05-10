@@ -445,6 +445,20 @@ async def forward_handler(message: types.Message):
     logger.info(f"Has forward_sender_name: {getattr(message, 'forward_sender_name', None) is not None}")
     logger.info(f"Has forward_date: {getattr(message, 'forward_date', None) is not None}")
     
+    # Log ALL attributes of the message
+    logger.info(f"Message dir: {dir(message)}")
+    
+    # Try to serialize the full message
+    try:
+        if hasattr(message, 'to_python'):
+            logger.info(f"Message full data: {message.to_python()}")
+        elif hasattr(message, 'as_json'):
+            logger.info(f"Message JSON: {message.as_json()}")
+        else:
+            logger.info(f"Could not serialize message, no method available")
+    except Exception as e:
+        logger.error(f"Error serializing message: {e}")
+    
     # Check if message has entities (like @mentions)
     if hasattr(message, 'entities') and message.entities:
         logger.info(f"Has entities: {len(message.entities)}")
