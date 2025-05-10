@@ -89,7 +89,19 @@ def register_handlers(dp, db_enabled=False):
     # New chat members handler
     dp.register_message_handler(new_chat_members, content_types=types.ContentTypes.NEW_CHAT_MEMBERS)
     
-    # Unified handler for all types of forwarded messages
+    # Handler for specific public group forwards
+    dp.register_message_handler(
+        public_group_forward_handler,
+        lambda message: (
+            hasattr(message, 'forward_date') and message.forward_date is not None and
+            not message.forward_from and not message.forward_from_chat and
+            hasattr(message, 'forward_origin') and 
+            getattr(message.forward_origin, 'type', '') == 'channel'
+        ),
+        content_types=types.ContentTypes.ANY
+    )
+    
+    # General handler for all other forwarded messages
     dp.register_message_handler(
         simple_forward_handler, 
         lambda message: hasattr(message, 'forward_date') and message.forward_date is not None,
@@ -431,6 +443,50 @@ async def new_chat_members(message: types.Message):
                     )
                 except Exception as inner_e:
                     logger.error(f"Failed to send fallback welcome message: {inner_e}")
+
+async def public_group_forward_handler(message: types.Message):
+    """Handler specifically for public group forwards that need special explanation"""
+    logger.info(f"=== PUBLIC GROUP FORWARD DETECTED ===")
+    if hasattr(message, 'to_python'):
+        logger.info(f"Message data: {message.to_python()}")
+    
+    # Create keyboard with help button
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        InlineKeyboardButton("❓ Why can't I get the group ID?", callback_data="group_id_help")
+    )
+    
+    # Create a detailed explanation
+    forward_info = (
+        f"📨 <b>Forwarded Message Info</b>\n\n"
+        f"❌ <b>UNABLE TO GET GROUP ID</b>\n\n"
+        f"ℹ️ Due to Telegram's API limitations, this bot cannot extract the original group ID from this forwarded message.\n\n"
+        f"This typically happens with public groups where the bot is not a member.\n\n"
+        f"💡 <b>Solutions:</b>\n"
+        f"1. Add this bot to the group directly\n"
+        f"2. Forward a message from a channel or a private group\n"
+        f"3. If you're an admin, temporarily toggle the group to private, forward a message, then set it back\n\n"
+        f"If the group has an @username, you can access it via the API with that username instead of an ID."
+    )
+    
+    # Try to extract any identifiable information
+    if hasattr(message, 'forward_origin') and message.forward_origin:
+        # Get origin type
+        origin_type = getattr(message.forward_origin, 'type', 'unknown')
+        forward_info += f"\n\n<b>Origin Type</b>: {origin_type}"
+        
+        # Try to extract any identifiable information from entities
+        if hasattr(message, 'entities') and message.entities and hasattr(message, 'text') and message.text:
+            mentioned_entities = []
+            for entity in message.entities:
+                if entity.type == 'mention':
+                    mention_text = message.text[entity.offset:entity.offset + entity.length] 
+                    mentioned_entities.append(mention_text)
+                    
+            if mentioned_entities:
+                forward_info += f"\n\n📢 <b>Group might be</b>: {', '.join(mentioned_entities)}"
+    
+    await message.reply(forward_info, parse_mode="HTML", reply_markup=keyboard)
 
 async def simple_forward_handler(message: types.Message):
     """Simple, reliable handler for all types of forwarded messages"""
