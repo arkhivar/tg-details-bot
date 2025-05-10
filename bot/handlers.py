@@ -479,6 +479,8 @@ async def forward_handler(message: types.Message):
             logger.info(f"forward_origin has sender_user: {message.forward_origin.sender_user.id}")
         if hasattr(message.forward_origin, 'chat'):
             logger.info(f"forward_origin has chat: {message.forward_origin.chat.id}")
+        if hasattr(message.forward_origin, 'sender_chat'):
+            logger.info(f"forward_origin has sender_chat: {message.forward_origin.sender_chat.id}")
     else:
         logger.info(f"Has forward_origin: False")
         
@@ -491,8 +493,52 @@ async def forward_handler(message: types.Message):
         InlineKeyboardButton("❓ Help", callback_data="show_help")
     )
     
-    # First case: message from a chat (group/channel)
-    if message.forward_from_chat:
+    # Check for forward_origin with chat information (handles both channels and groups)
+    if (hasattr(message, 'forward_origin') and 
+        getattr(message.forward_origin, 'type', None) in ['channel', 'group', 'supergroup'] and 
+        hasattr(message.forward_origin, 'chat')):
+        
+        # Extract chat info from forward_origin.chat
+        forward_chat = message.forward_origin.chat
+        forward_chat_id = forward_chat.id
+        forward_chat_type = getattr(forward_chat, 'type', 'channel')
+        forward_chat_title = getattr(forward_chat, 'title', 'Unknown')
+        
+        # Log the detection of a forward from a channel via forward_origin
+        logger.info(f"Forwarded message detected from forward_origin.chat: {forward_chat_id} ({forward_chat_type})")
+        
+        # Build response with the available information
+        forward_info = (
+            f"📨 <b>Forwarded Message Info</b>\n\n"
+            f"🆔 <b>Original Chat ID</b>: <code>{forward_chat_id}</code>\n"
+            f"📋 <b>Chat Type</b>: {forward_chat_type}\n"
+        )
+        
+        # Add title for channels
+        forward_info += f"📢 <b>Title</b>: {forward_chat_title}\n"
+        
+        # Add username if available
+        username = getattr(forward_chat, 'username', None)
+        if username:
+            forward_info += f"👤 <b>Username</b>: @{username}\n"
+            forward_info += f"🔗 <b>Link</b>: https://t.me/{username}\n"
+            
+            # Add message ID if available
+            message_id = getattr(message.forward_origin, 'message_id', None)
+            if message_id:
+                forward_info += f"🔢 <b>Original Message ID</b>: {message_id}\n"
+                forward_info += f"🔗 <b>Original Message Link</b>: https://t.me/{username}/{message_id}\n"
+        
+        forward_info += f"\n✅ <b>SUCCESS</b>: The full {forward_chat_type.lower()} ID was successfully retrieved!"
+        
+        await message.reply(
+            forward_info,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    # First case: message from a chat via forward_from_chat (traditional way)
+    elif message.forward_from_chat:
         forward_from_chat = message.forward_from_chat
         forward_chat_id = forward_from_chat.id
         forward_chat_type = forward_from_chat.type
