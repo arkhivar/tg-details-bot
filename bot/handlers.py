@@ -191,11 +191,14 @@ async def help_command(message: types.Message):
         "/type - Show the chat type (private, group, supergroup, channel)\n"
         "/members - Get the number of members (when available)\n"
         "/admins - Get information about group administrators\n\n"
-        "📨 <b>Forward Detection</b>:\n"
-        "Forward any message from a group or channel to me in private chat, and I'll instantly show you the source chat ID.\n"
-        "Forward messages with @username mentions to see detected groups/users.\n"
-        "The bot also detects user mentions without usernames and shows their IDs.\n\n"
+        "📨 <b>Get Group/Channel IDs</b>:\n"
+        "<b>Method 1 (Recommended)</b>: Add me to the group/channel and use /id command.\n"
+        "<b>Method 2</b>: Forward a message from a public group/channel, and I'll show the source chat ID.\n\n"
+        "⚠️ <b>Important Limitation</b>: Due to Telegram's privacy restrictions, I can only get group IDs from forwarded messages if:\n"
+        "- The source is a public group/channel, OR\n"
+        "- I'm already a member of that group/channel\n\n"
         "You can also @mention me in a message to get basic chat info.\n\n"
+        "👤 <b>User Detection</b>: I can detect both @usernames and users without usernames in forwarded messages.\n\n"
         "<i>Note: Some information may be limited based on my permissions and the chat type.</i>"
     )
     await message.reply(help_text, parse_mode="HTML", reply_markup=keyboard)
@@ -504,6 +507,16 @@ async def forward_handler(message: types.Message):
             forward_info += f"👤 <b>Username</b>: @{forward_from_chat.username}\n"
             forward_info += f"🔗 <b>Link</b>: https://t.me/{forward_from_chat.username}\n"
         
+        # Add original message ID if available
+        if message.forward_from_message_id:
+            forward_info += f"🔢 <b>Original Message ID</b>: {message.forward_from_message_id}\n"
+            
+            # Add link to the original message if username is available
+            if getattr(forward_from_chat, 'username', None):
+                forward_info += f"🔗 <b>Original Message Link</b>: https://t.me/{forward_from_chat.username}/{message.forward_from_message_id}\n"
+                
+        forward_info += f"\n✅ <b>SUCCESS</b>: The full group/channel ID was successfully retrieved!"
+        
         await message.reply(
             forward_info,
             parse_mode="HTML",
@@ -575,9 +588,12 @@ async def forward_handler(message: types.Message):
         
         forward_info = (
             f"📨 <b>Forwarded Message Info</b>\n\n"
-            f"ℹ️ This message was forwarded from a user who has enabled privacy settings that restrict forwarding their messages.\n\n"
+            f"❌ <b>UNABLE TO GET GROUP ID</b>\n\n"
+            f"ℹ️ This message was forwarded from a chat with privacy settings that restrict forwarding information.\n\n"
             f"👤 <b>Sender Name</b>: {message.forward_sender_name}\n"
-            f"⚠️ <b>User ID not available</b> due to privacy settings.\n"
+            f"⚠️ <b>Chat/Group ID not available</b> due to privacy settings.\n\n"
+            f"💡 <b>Solution</b>: To get the group ID, the bot needs to be added to that group first.\n"
+            f"The forwarded message approach only works for public groups/channels or when the bot is already a member.\n"
         )
         
         # Check if the message text contains mentions or text_mentions (users without username)
@@ -684,13 +700,21 @@ async def forward_handler(message: types.Message):
         forward_date = getattr(message, 'forward_date', None)
         date_str = forward_date.strftime("%Y-%m-%d %H:%M UTC") if forward_date else "Unknown"
         
-        # Create a generic response
+        # Create a more detailed and helpful response
         forward_info = (
             f"📨 <b>Forwarded Message Info</b>\n\n"
-            f"⚠️ This message appears to be forwarded, but I couldn't identify the source details.\n\n"
+            f"❌ <b>UNABLE TO GET GROUP ID</b>\n\n"
+            f"⚠️ This message appears to be forwarded, but the original source information is not available due to one of the following reasons:\n\n"
+            f"1️⃣ The source chat has privacy settings that hide forwarded information\n"
+            f"2️⃣ The bot is not a member of the source group/channel\n"
+            f"3️⃣ The forwarded message is from a private chat with restrictive settings\n\n"
             f"📅 <b>Forward Date</b>: {date_str}\n"
             f"💬 <b>Message Type</b>: {message.content_type}\n\n"
-            f"<i>Try forwarding a message directly from the group or channel you want to get information about.</i>"
+            f"💡 <b>How to Get Group ID:</b>\n"
+            f"- <b>Option 1:</b> Add this bot to the target group/channel\n"
+            f"- <b>Option 2:</b> For public groups/channels, forward a message directly from the group/channel\n"
+            f"- <b>Option 3:</b> For channels with signature, check if the original author is mentioned\n\n"
+            f"ℹ️ <i>Telegram's privacy features sometimes prevent getting group IDs via forwarded messages unless the bot is a member of that group.</i>"
         )
         
         await message.reply(
