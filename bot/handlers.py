@@ -674,8 +674,10 @@ async def simple_forward_handler(message: types.Message):
     # Log the forward type
     logger.info(f"Forward type: from_chat={has_from_chat}, from_user={has_from_user}, sender_name={has_sender_name}, has_origin={has_origin}")
     
-    # Start building the response message
-    forward_info = f"📨 <b>Forwarded Message Info</b>\n\n"
+    # Start building the response message with the new format
+    source_info = ""  # For the source group/channel
+    user_info = ""    # For the user information
+    success_msg = ""  # For the success message
     success = False
     
     # Keyboard for when we need help button
@@ -684,33 +686,81 @@ async def simple_forward_handler(message: types.Message):
         InlineKeyboardButton("❓ Why can't I get the group ID?", callback_data="group_id_help")
     )
     
+    # SECTION 1: SOURCE GROUP/CHANNEL INFO
+    
     # Case 1: We have forward_from_chat - this is the most reliable case
     if has_from_chat:
         chat = message.forward_from_chat
-        forward_info += f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
-        chat_type = chat.type
-        forward_info += f"📋 <b>Chat Type</b>: {chat_type}\n"
+        chat_type = chat.type.upper()
+        source_info = f"SOURCE {chat_type}: ID <code>{chat.id}</code>\n"
         
         if getattr(chat, 'title', None):
-            forward_info += f"📢 <b>Title</b>: {chat.title}\n"
+            source_info += f"📢 Title: {chat.title}\n"
         
         if getattr(chat, 'username', None):
-            forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
-            forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
+            source_info += f"👤 Username: @{chat.username}\n"
+            source_info += f"🔗 Link: https://t.me/{chat.username}\n"
             
-        forward_info += f"\n✅ <b>SUCCESS</b>: The full {chat_type.lower()} ID was successfully retrieved!"
+        # Add original message ID and link if available
+        if getattr(message, 'forward_from_message_id', None):
+            source_info += f"🔢 Message ID: {message.forward_from_message_id}\n"
+            
+            if getattr(chat, 'username', None):
+                source_info += f"🔗 Message Link: https://t.me/{chat.username}/{message.forward_from_message_id}\n"
+        
         success = True
+        
+    # Try origin.chat
+    elif has_origin and hasattr(message.forward_origin, 'chat') and message.forward_origin.chat:
+        chat = message.forward_origin.chat
+        chat_type = getattr(chat, 'type', 'GROUP').upper()
+        source_info = f"SOURCE {chat_type}: ID <code>{chat.id}</code>\n"
+        
+        if getattr(chat, 'title', None):
+            source_info += f"📢 Title: {chat.title}\n"
+        
+        if getattr(chat, 'username', None):
+            source_info += f"👤 Username: @{chat.username}\n"
+            source_info += f"🔗 Link: https://t.me/{chat.username}\n"
+        
+        success = True
+        
+    # Try origin.sender_chat
+    elif has_origin and hasattr(message.forward_origin, 'sender_chat') and message.forward_origin.sender_chat:
+        chat = message.forward_origin.sender_chat
+        chat_type = getattr(chat, 'type', 'GROUP').upper()
+        source_info = f"SOURCE {chat_type}: ID <code>{chat.id}</code>\n"
+        
+        if getattr(chat, 'title', None):
+            source_info += f"📢 Title: {chat.title}\n"
+        
+        if getattr(chat, 'username', None):
+            source_info += f"👤 Username: @{chat.username}\n"
+            source_info += f"🔗 Link: https://t.me/{chat.username}\n"
+            
+        success = True
+        
+    # No source group info available
+    else:
+        source_info = "SOURCE GROUP: unavailable\n"
+        if has_origin:
+            origin_type = getattr(message.forward_origin, 'type', 'unknown')
+            if origin_type not in ['user', 'unknown']:
+                source_info += f"Origin type: {origin_type}\n"
+            source_info += "⚠️ Unable to retrieve group ID due to privacy settings\n"
     
-    # Case 2: We have forward_from - this is a user forward
-    elif has_from_user:
+    # SECTION 2: USER INFO
+    
+    # Case for direct user forward
+    if has_from_user:
         user = message.forward_from
-        forward_info += f"👤 <b>Forwarded from User</b>\n"
-        forward_info += f"🆔 <b>User ID</b>: <code>{user.id}</code>\n"
+        user_info = f"Forwarded from User 🆔 <code>{user.id}</code>\n"
         
         if getattr(user, 'username', None):
-            forward_info += f"👤 <b>Username</b>: @{user.username}\n"
-            forward_info += f"🔗 <b>Link</b>: https://t.me/{user.username}\n"
-        
+            user_info += f"👤 Username: @{user.username}\n"
+            user_info += f"🔗 Link: https://t.me/{user.username}\n"
+            
+        # Add name information 
         name_parts = []
         if getattr(user, 'first_name', None):
             name_parts.append(user.first_name)
@@ -718,105 +768,63 @@ async def simple_forward_handler(message: types.Message):
             name_parts.append(user.last_name)
             
         if name_parts:
-            forward_info += f"👤 <b>Name</b>: {' '.join(name_parts)}\n"
+            user_info += f"👤 Name: {' '.join(name_parts)}\n"
+        
+        # If we only have user info but no source, set success for user
+        if not success:
+            success = True
+        
+    # Case for user info from forward_origin
+    elif has_origin and hasattr(message.forward_origin, 'sender_user') and message.forward_origin.sender_user:
+        user = message.forward_origin.sender_user
+        user_info = f"Forwarded from User 🆔 <code>{user.id}</code>\n"
+        
+        if getattr(user, 'username', None):
+            user_info += f"👤 Username: @{user.username}\n"
+            user_info += f"🔗 Link: https://t.me/{user.username}\n"
             
-        forward_info += f"\n✅ <b>SUCCESS</b>: The user ID was successfully retrieved!"
-        success = True
+        # Add name information
+        name_parts = []
+        if getattr(user, 'first_name', None):
+            name_parts.append(user.first_name)
+        if getattr(user, 'last_name', None):
+            name_parts.append(user.last_name)
+            
+        if name_parts:
+            user_info += f"👤 Name: {' '.join(name_parts)}\n"
+        
+        # If we only have user info but no source, set success for user
+        if not success:
+            success = True
     
-    # Case 3: We have a hidden sender (privacy settings enabled)
+    # Case for hidden user (only name)
     elif has_sender_name:
-        forward_info += (
-            f"👤 <b>Forwarded from</b>: {message.forward_sender_name}\n\n"
-            f"❌ <b>ID NOT AVAILABLE</b>\n\n"
-            f"This user has <b>privacy settings enabled</b> that prevent obtaining their ID from forwarded messages.\n\n"
-            f"Note: Only the name is visible due to the user's privacy settings."
-        )
+        user_info = f"Forwarded from User: {message.forward_sender_name}\n"
+        user_info += "⚠️ User ID not available due to privacy settings\n"
     
-    # Case 4 (complex): We have forward_origin - try to extract information
-    elif has_origin:
-        # Try to get the origin type
-        origin_type = getattr(message.forward_origin, 'type', 'unknown')
-        forward_info += f"🔄 <b>Origin Type</b>: {origin_type}\n\n"
-        
-        # 4.1: Check if we have chat info in the origin
-        if hasattr(message.forward_origin, 'chat') and message.forward_origin.chat:
-            chat = message.forward_origin.chat
-            forward_info += f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
-            chat_type = getattr(chat, 'type', 'unknown')
-            forward_info += f"📋 <b>Chat Type</b>: {chat_type}\n"
-            
-            if getattr(chat, 'title', None):
-                forward_info += f"📢 <b>Title</b>: {chat.title}\n"
-            
-            if getattr(chat, 'username', None):
-                forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
-                forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
-                
-            forward_info += f"\n✅ <b>SUCCESS</b>: The full {chat_type.lower()} ID was successfully retrieved!"
-            success = True
-        
-        # 4.2: Check if we have sender_chat in the origin
-        elif hasattr(message.forward_origin, 'sender_chat') and message.forward_origin.sender_chat:
-            chat = message.forward_origin.sender_chat
-            forward_info += f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
-            chat_type = getattr(chat, 'type', 'unknown')
-            forward_info += f"📋 <b>Chat Type</b>: {chat_type}\n"
-            
-            if getattr(chat, 'title', None):
-                forward_info += f"📢 <b>Title</b>: {chat.title}\n"
-            
-            if getattr(chat, 'username', None):
-                forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
-                forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
-                
-            forward_info += f"\n✅ <b>SUCCESS</b>: The full {chat_type.lower()} ID was successfully retrieved!"
-            success = True
-        
-        # 4.3: Check if we have sender in the origin
-        elif hasattr(message.forward_origin, 'sender_user') and message.forward_origin.sender_user:
-            user = message.forward_origin.sender_user
-            forward_info += f"👤 <b>Forwarded from User</b>\n"
-            forward_info += f"🆔 <b>User ID</b>: <code>{user.id}</code>\n"
-            
-            if getattr(user, 'username', None):
-                forward_info += f"👤 <b>Username</b>: @{user.username}\n"
-                forward_info += f"🔗 <b>Link</b>: https://t.me/{user.username}\n"
-            
-            name_parts = []
-            if getattr(user, 'first_name', None):
-                name_parts.append(user.first_name)
-            if getattr(user, 'last_name', None):
-                name_parts.append(user.last_name)
-                
-            if name_parts:
-                forward_info += f"👤 <b>Name</b>: {' '.join(name_parts)}\n"
-                
-            forward_info += f"\n✅ <b>SUCCESS</b>: The user ID was successfully retrieved!"
-            success = True
-        
-        # 4.4: No useful information available
+    # SECTION 3: SUCCESS MESSAGE
+    if success:
+        if has_from_user or (has_origin and hasattr(message.forward_origin, 'sender_user')):
+            success_msg = "✅ SUCCESS: The user ID was successfully retrieved!"
         else:
-            # This is likely a public group where we can't get the ID
-            forward_info += (
-                f"❌ <b>UNABLE TO GET GROUP ID</b>\n\n"
-                f"Due to Telegram's API limitations, this bot cannot extract the original group ID from this forwarded message.\n\n"
-                f"This typically happens with public groups where the bot is not a member.\n\n"
-                f"💡 <b>Solutions:</b>\n"
-                f"1. Add this bot to the group directly\n"
-                f"2. Forward a message from a channel or a private group\n"
-                f"3. If you're an admin, temporarily toggle the group to private, forward a message, then set it back\n\n"
-                f"If the group has an @username, you can access it via the API with that username instead of an ID."
-            )
-    
-    # Case 5: Fallback - we don't have any information
+            # For chat/channel/group
+            chat_type = "chat"
+            if has_from_chat:
+                chat_type = message.forward_from_chat.type
+            elif has_origin and hasattr(message.forward_origin, 'chat'):
+                chat_type = getattr(message.forward_origin.chat, 'type', 'chat') 
+            elif has_origin and hasattr(message.forward_origin, 'sender_chat'):
+                chat_type = getattr(message.forward_origin.sender_chat, 'type', 'chat')
+                
+            success_msg = f"✅ SUCCESS: The {chat_type} ID was successfully retrieved!"
     else:
-        forward_info += (
-            f"❌ <b>UNABLE TO GET SOURCE INFORMATION</b>\n\n"
-            f"This forwarded message doesn't contain identifiable information about its source.\n\n"
-            f"This could be due to privacy settings or a limitation in Telegram's API."
-        )
+        success_msg = "❌ UNABLE TO GET ID\n"
+        success_msg += "Due to Telegram's API limitations, neither group ID nor user ID could be extracted."
+    
+    # SECTION 4: COMBINE ALL PARTS AND SEND
     
     # Check for mentions in the text (might help identify the source)
+    mentioned_info = ""
     mentioned_entities = []
     if hasattr(message, 'entities') and message.entities and hasattr(message, 'text') and message.text:
         for entity in message.entities:
@@ -825,13 +833,30 @@ async def simple_forward_handler(message: types.Message):
                 mentioned_entities.append(mention_text)
                 
         if mentioned_entities:
-            forward_info += f"\n\n<b>Mentions in text</b>: {', '.join(mentioned_entities)}"
+            mentioned_info = f"Mentioned: {', '.join(mentioned_entities)}\n"
+            mentioned_info += "⚠️ This might be related to the source group\n"
     
-    # Send the appropriate response
+    # Combine all sections
+    forward_info = f"{source_info}\n{user_info}\n"
+    if mentioned_info:
+        forward_info += f"{mentioned_info}\n"
+    forward_info += success_msg
+    
+    # Use the appropriate keyboard
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    
     if success:
-        await message.reply(forward_info, parse_mode="HTML")
+        keyboard.add(
+            InlineKeyboardButton("ℹ️ More Info", callback_data="get_info"),
+            InlineKeyboardButton("❓ Help", callback_data="show_help")
+        )
+        await message.reply(forward_info, parse_mode="HTML", reply_markup=keyboard)
     else:
-        await message.reply(forward_info, parse_mode="HTML", reply_markup=help_keyboard)
+        keyboard.add(
+            InlineKeyboardButton("❓ Why can't I get the ID?", callback_data="group_id_help"),
+            InlineKeyboardButton("📚 Help", callback_data="show_help")
+        )
+        await message.reply(forward_info, parse_mode="HTML", reply_markup=keyboard)
 
 async def forward_handler(message: types.Message):
     """Handler for forwarded messages - detects the original chat ID or user ID"""
