@@ -22,7 +22,8 @@ Preferred communication style: Simple, everyday language.
 - **Connection Pooling**: Configured with pool recycling and pre-ping for reliable database connections
 
 ## Bot Architecture
-- **Command-Based Interface**: Supports commands like `/start`, `/help`, `/id`, `/info`, `/type`, and `/members`
+- **Command-Based Interface**: Supports commands like `/start`, `/help`, `/id`, `/info`, `/type`, `/members`, `/topics`, and `/admins`
+- **Forum Topic Support**: Detects and displays topic IDs for forum supergroups with specialized handling
 - **Mention Support**: Responds to @mentions with basic chat information
 - **Error Handling**: Graceful error handling for unauthorized access and chat not found scenarios
 - **Middleware System**: Database middleware for processing messages and updating chat information

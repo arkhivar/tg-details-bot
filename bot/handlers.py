@@ -83,6 +83,7 @@ def register_handlers(dp, db_enabled=False):
     dp.register_message_handler(info_command, commands=['info'])
     dp.register_message_handler(type_command, commands=['type'])
     dp.register_message_handler(members_command, commands=['members'])
+    dp.register_message_handler(topics_command, commands=['topics'])  # Forum topics command
     dp.register_message_handler(hello_command, commands=['hello'])  # Added explicit hello command
     dp.register_message_handler(admins_command, commands=['admins'])  # Admin information command
     dp.register_message_handler(forward_help_command, commands=['forward_help'])  # Special command to explain forward limitations
@@ -292,6 +293,58 @@ async def members_command(message: types.Message):
     except Exception as e:
         logger.error(f"Error getting members count: {e}")
         await message.reply(f"❌ Error getting member count: {str(e)}")
+
+async def topics_command(message: types.Message):
+    """Handler for /topics command - shows forum topic information"""
+    try:
+        if message.chat.type in ["private"]:
+            await message.reply("This command only works in groups and channels.")
+            return
+            
+        # Check if this is a forum
+        if hasattr(message.chat, 'is_forum') and message.chat.is_forum:
+            # Get topic information from current message
+            from bot.utils import detect_topic_from_message
+            topic_info = detect_topic_from_message(message)
+            
+            response = f"📝 <b>Forum Topics Information</b>\n\n"
+            response += f"🆔 <b>Chat ID</b>: <code>{message.chat.id}</code>\n"
+            response += f"📊 <b>Is Forum</b>: Yes\n"
+            response += f"📢 <b>Title</b>: {message.chat.title}\n\n"
+            
+            if topic_info.get('topic_id'):
+                response += f"🎯 <b>Current Topic ID</b>: <code>{topic_info['topic_id']}</code>\n"
+                response += f"📍 <b>You are currently in topic ID {topic_info['topic_id']}</b>\n\n"
+            else:
+                response += f"📍 <b>General Topic</b> (no specific topic ID)\n\n"
+            
+            response += f"💡 <b>Note</b>: This bot can detect the current topic ID when you send commands from within a specific topic. "
+            response += f"To get topic IDs from other topics, send this command from those topics.\n\n"
+            response += f"🔧 <b>For Developers</b>: Use the topic ID as the message_thread_id when sending messages to specific topics via the Bot API."
+            
+            # Create keyboard
+            keyboard = InlineKeyboardMarkup(row_width=2)
+            keyboard.add(
+                InlineKeyboardButton("📋 Chat ID", callback_data="get_id"),
+                InlineKeyboardButton("ℹ️ More Info", callback_data="get_info"),
+                InlineKeyboardButton("❓ Help", callback_data="show_help")
+            )
+            
+            await message.reply(response, parse_mode="HTML", reply_markup=keyboard)
+        else:
+            await message.reply(
+                "📝 <b>Forum Topics</b>\n\n"
+                "This chat is not a forum supergroup. Forum topics are only available in forum-enabled supergroups.\n\n"
+                "To use forum features:\n"
+                "1. Create or convert a supergroup to a forum\n" 
+                "2. Enable 'Topics' in the group settings\n"
+                "3. Add this bot to the forum group",
+                parse_mode="HTML"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error in topics command: {e}")
+        await message.reply(f"❌ Error getting topic information: {str(e)}")
         
 async def forward_help_command(message: types.Message):
     """Dedicated command to explain why group IDs might not be available in forwards"""
@@ -462,16 +515,37 @@ async def new_chat_members(message: types.Message):
                 
                 # Then get the detailed chat info
                 chat_info = await get_chat_info(message.bot, message.chat.id)
-                formatted_info = format_chat_info(chat_info)
+                
+                # Check if this is a forum and add topic information
+                topic_info_text = ""
+                if chat_info.get('is_forum'):
+                    from bot.utils import detect_topic_from_message
+                    topic_info = detect_topic_from_message(message)
+                    if topic_info.get('topic_id'):
+                        topic_info_text = f"\n🎯 <b>Current Topic ID</b>: <code>{topic_info['topic_id']}</code>\n💡 <b>Use /topics command to get more topic information</b>\n"
+                    else:
+                        topic_info_text = f"\n📝 <b>Forum detected!</b> Use /topics command for topic information\n"
+                
+                formatted_info = format_chat_info(chat_info) + topic_info_text
                 
                 # Create detailed inline keyboard with command buttons
                 detailed_keyboard = InlineKeyboardMarkup(row_width=2)
-                detailed_keyboard.add(
-                    InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-                    InlineKeyboardButton("👥 Members", callback_data="get_members"),
-                    InlineKeyboardButton("❓ Help", callback_data="show_help")
-                )
+                # Add different buttons based on whether it's a forum
+                if chat_info.get('is_forum'):
+                    detailed_keyboard.add(
+                        InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
+                        InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
+                        InlineKeyboardButton("👥 Members", callback_data="get_members"),
+                        InlineKeyboardButton("📝 Topics", callback_data="get_topics"),
+                        InlineKeyboardButton("❓ Help", callback_data="show_help")
+                    )
+                else:
+                    detailed_keyboard.add(
+                        InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
+                        InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
+                        InlineKeyboardButton("👥 Members", callback_data="get_members"),
+                        InlineKeyboardButton("❓ Help", callback_data="show_help")
+                    )
                 
                 # Update the welcome message with detailed info
                 await welcome_message.edit_text(
@@ -1413,6 +1487,57 @@ async def button_callback(callback_query: types.CallbackQuery):
                     parse_mode="HTML",
                     reply_markup=keyboard
                 )
+        
+        elif action == "get_topics":
+            try:
+                # Check if this is a forum
+                chat = await callback_query.bot.get_chat(chat_id)
+                if hasattr(chat, 'is_forum') and chat.is_forum:
+                    from bot.utils import detect_topic_from_message
+                    topic_info = detect_topic_from_message(callback_query.message)
+                    
+                    response = f"📝 <b>Forum Topics Information</b>\n\n"
+                    response += f"🆔 <b>Chat ID</b>: <code>{chat_id}</code>\n"
+                    response += f"📊 <b>Is Forum</b>: Yes\n"
+                    response += f"📢 <b>Title</b>: {chat.title}\n\n"
+                    
+                    if topic_info.get('topic_id'):
+                        response += f"🎯 <b>Current Topic ID</b>: <code>{topic_info['topic_id']}</code>\n"
+                        response += f"📍 <b>You are currently in topic ID {topic_info['topic_id']}</b>\n\n"
+                    else:
+                        response += f"📍 <b>General Topic</b> (no specific topic ID)\n\n"
+                    
+                    response += f"💡 <b>Note</b>: This bot can detect the current topic ID when you interact from within a specific topic. "
+                    response += f"To get topic IDs from other topics, use /topics command from those topics.\n\n"
+                    response += f"🔧 <b>For Developers</b>: Use the topic ID as the message_thread_id when sending messages to specific topics via the Bot API."
+                else:
+                    response = f"📝 <b>Forum Topics</b>\n\n"
+                    response += f"This chat is not a forum supergroup. Forum topics are only available in forum-enabled supergroups.\n\n"
+                    response += f"To use forum features:\n"
+                    response += f"1. Create or convert a supergroup to a forum\n" 
+                    response += f"2. Enable 'Topics' in the group settings\n"
+                    response += f"3. Add this bot to the forum group"
+                
+                # Create back button
+                keyboard = InlineKeyboardMarkup(row_width=1)
+                keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
+                
+                await callback_query.message.edit_text(
+                    response,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+                
+            except Exception as e:
+                logger.error(f"Error getting topics info: {e}")
+                
+                keyboard = InlineKeyboardMarkup()
+                keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
+                
+                await callback_query.message.edit_text(
+                    f"❌ Error getting topic information: {str(e)}",
+                    reply_markup=keyboard
+                )
                 
         elif action == "group_id_help":
             # Provide detailed help about group ID limitations
@@ -1448,16 +1573,35 @@ async def button_callback(callback_query: types.CallbackQuery):
             )
         
         elif action == "show_help":
-            # Recreate the help keyboard
+            # Recreate the help keyboard  
             keyboard = InlineKeyboardMarkup(row_width=2)
-            keyboard.add(
-                InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-                InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
-                InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-                InlineKeyboardButton("👥 Members", callback_data="get_members"),
-                InlineKeyboardButton("👮‍♂️ Admins", callback_data="get_admins"),
-                InlineKeyboardButton("❓ Group ID Help", callback_data="group_id_help")
-            )
+            
+            # Check if this is a forum to add the Topics button
+            try:
+                chat = await callback_query.bot.get_chat(chat_id)
+                is_forum = hasattr(chat, 'is_forum') and chat.is_forum
+            except:
+                is_forum = False
+            
+            if is_forum:
+                keyboard.add(
+                    InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
+                    InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
+                    InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
+                    InlineKeyboardButton("👥 Members", callback_data="get_members"),
+                    InlineKeyboardButton("📝 Topics", callback_data="get_topics"),
+                    InlineKeyboardButton("👮‍♂️ Admins", callback_data="get_admins"),
+                    InlineKeyboardButton("❓ Group ID Help", callback_data="group_id_help")
+                )
+            else:
+                keyboard.add(
+                    InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
+                    InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
+                    InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
+                    InlineKeyboardButton("👥 Members", callback_data="get_members"),
+                    InlineKeyboardButton("👮‍♂️ Admins", callback_data="get_admins"),
+                    InlineKeyboardButton("❓ Group ID Help", callback_data="group_id_help")
+                )
             
             help_text = (
                 "🔍 <b>Available Commands</b>:\n\n"
@@ -1466,6 +1610,7 @@ async def button_callback(callback_query: types.CallbackQuery):
                 "/hello - Force the bot to respond with basic chat info\n"
                 "/type - Show the chat type (private, group, supergroup, channel)\n"
                 "/members - Get the number of members (when available)\n"
+                "/topics - Show forum topic information (for forum supergroups)\n"
                 "/admins - Get information about group administrators\n"
                 "/forward_help - Explain why group IDs from forwards sometimes don't work\n\n"
                 "📨 <b>Get Group/Channel IDs</b>:\n"
