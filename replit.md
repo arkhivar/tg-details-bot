@@ -1,8 +1,8 @@
 # Overview
 
-This is a Telegram Info Bot project that provides technical information about groups and channels. The bot can retrieve and display chat IDs, metadata, member counts, and other technical information when added to groups or channels. The project includes both a Telegram bot backend and a web dashboard for monitoring bot interactions.
+This is a Telegram Info Bot project that provides technical information about groups and channels. The bot can retrieve and display chat IDs, metadata, member counts, forum topic IDs, and other technical information when added to groups or channels. 
 
-The application serves as a utility tool for Telegram administrators and developers who need to quickly access technical information about chats, including chat IDs, types, member counts, and administrative details.
+The application serves as a utility tool for Telegram administrators and developers who need to quickly access technical information about chats, including chat IDs, types, member counts, administrative details, and forum topic support.
 
 # User Preferences
 
@@ -11,10 +11,10 @@ Preferred communication style: Simple, everyday language.
 # System Architecture
 
 ## Backend Architecture
-- **Flask Web Application**: Serves as the main web server with a dashboard interface for monitoring bot activity
 - **Aiogram Bot Framework**: Handles all Telegram bot interactions, message processing, and command handling
 - **Modular Handler System**: Bot handlers are organized in separate modules with middleware for database operations
 - **Database Integration**: SQLAlchemy ORM with a Chat model to track bot interactions and chat metadata
+- **Standalone Architecture**: Simplified bot-only design without web framework dependencies
 
 ## Data Storage
 - **SQLAlchemy ORM**: Used for database abstraction with a declarative base model
@@ -28,27 +28,29 @@ Preferred communication style: Simple, everyday language.
 - **Error Handling**: Graceful error handling for unauthorized access and chat not found scenarios
 - **Middleware System**: Database middleware for processing messages and updating chat information
 
-## Frontend Architecture
-- **Bootstrap Dark Theme**: Uses Bootstrap with dark theme for the web dashboard
-- **Real-time Statistics**: Dashboard displays chat statistics broken down by type (groups, supergroups, channels, private)
-- **Responsive Design**: Mobile-friendly interface with card-based layout
-- **Interactive Elements**: Search functionality and hover effects for better user experience
+## User Interface
+- **Telegram Interface**: Interactive inline keyboards with dynamic button layouts
+- **Forum Detection**: Automatic detection of forum supergroups with specialized topic buttons
+- **Command-Based Interaction**: Comprehensive set of commands for accessing different information types
+- **Structured Responses**: Clean, formatted output with appropriate emojis and code formatting
 
 ## Security and Configuration
 - **Environment Variables**: Bot token and database URL configured via environment variables
-- **Session Management**: Flask session handling with configurable secret key
+- **Database Security**: Connection pooling with automatic reconnection and error handling
 - **Logging System**: Comprehensive logging throughout the application for debugging and monitoring
 
 # External Dependencies
 
 ## Core Frameworks
 - **aiogram**: Telegram Bot API framework for Python
-- **Flask**: Web framework for the dashboard interface
 - **SQLAlchemy**: ORM for database operations
+- **psycopg2-binary**: PostgreSQL database adapter
 
-## Frontend Libraries
-- **Bootstrap**: CSS framework with dark theme variant
-- **Custom CSS**: Additional styling for enhanced user experience
+## Bot Features
+- **Interactive Keyboards**: Dynamic inline button layouts that adapt to chat type
+- **Forum Topic Detection**: Automatic recognition and ID extraction for forum supergroups
+- **Admin Information**: Comprehensive administrator details with permission breakdown
+- **Forwarded Message Analysis**: Enhanced format for analyzing forwarded content
 
 ## Environment and Utilities
 - **python-dotenv**: Environment variable management
@@ -56,10 +58,9 @@ Preferred communication style: Simple, everyday language.
 
 ## Required External Services
 - **Telegram Bot API**: Requires a bot token from Telegram's BotFather
-- **Database Service**: Configured to work with any SQLAlchemy-compatible database
-- **Web Hosting**: Designed to run on platforms that support Flask applications
+- **PostgreSQL Database**: Database service for persistent chat information storage
+- **Environment Configuration**: Simple environment variable setup for deployment
 
 ## Configuration Requirements
 - `TELEGRAM_BOT_TOKEN`: Bot token from Telegram BotFather
-- `DATABASE_URL`: Database connection string
-- `SESSION_SECRET`: Optional session secret for Flask (has default fallback)
+- `DATABASE_URL`: PostgreSQL database connection string

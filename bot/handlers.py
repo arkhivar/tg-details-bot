@@ -11,11 +11,10 @@ logger = logging.getLogger(__name__)
 class DatabaseMiddleware(BaseMiddleware):
     """Middleware to handle database operations"""
     
-    def __init__(self, db, chat_model, app):
+    def __init__(self, db, chat_model):
         """Initialize with the database and chat model"""
         self.db = db
         self.Chat = chat_model
-        self.app = app  # Store Flask app for context
         self.update_queue = []  # Queue to store updates to process
         super(DatabaseMiddleware, self).__init__()
     
@@ -48,18 +47,30 @@ class DatabaseMiddleware(BaseMiddleware):
         # No database interactions in middleware
     
     async def _save_chat_info_safely(self, bot, chat):
-        """Queue chat info to be saved asynchronously"""
+        """Update chat info in database"""
         try:
-            # Create a task to update chat info in the database
+            if not self.db.connected:
+                return
+                
             chat_id = chat.id
             chat_type = chat.type
+            title = getattr(chat, 'title', None)
+            username = getattr(chat, 'username', None)
+            is_forum = getattr(chat, 'is_forum', False)
             
-            # This is just for logging activity - actual database updates 
-            # will happen through explicit commands like /hello
-            logger.info(f"Saw activity in chat ID: {chat_id}, type: {chat_type}")
+            # Update chat info in database
+            self.db.update_chat_info(
+                chat_id=str(chat_id),
+                title=title,
+                chat_type=chat_type,
+                username=username,
+                is_forum=is_forum
+            )
+            
+            logger.debug(f"Updated chat info for {chat_id}")
             
         except Exception as e:
-            logger.error(f"Error queuing chat info update: {e}")
+            logger.error(f"Error updating chat info: {e}")
             logger.exception("Full exception details:")
 
 def register_handlers(dp, db_enabled=False):
@@ -72,9 +83,15 @@ def register_handlers(dp, db_enabled=False):
     """
     # Register global middleware for database support
     if db_enabled:
-        from app import db, Chat, app
+        import sys
+        import os
+        # Add the parent directory to sys.path to allow importing database
+        parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        sys.path.append(parent_dir)
+        
+        from database import db, Chat
         # Store the db and Chat model for use in handlers
-        dp.middleware.setup(DatabaseMiddleware(db, Chat, app))
+        dp.middleware.setup(DatabaseMiddleware(db, Chat))
     
     # Command handlers
     dp.register_message_handler(start_command, CommandStart())

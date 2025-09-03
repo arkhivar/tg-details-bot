@@ -6,18 +6,22 @@ from .handlers import register_handlers
 
 logger = logging.getLogger(__name__)
 
-# Add the parent directory to sys.path to allow importing app
+# Add the parent directory to sys.path to allow importing database
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(parent_dir)
 
-# Import the db and Chat model
+# Import the database module
 try:
-    from app import db, Chat, app
-    HAS_DB = True
-except ImportError:
-    logger.warning("Could not import database models. Chat tracking disabled.")
+    from database import db, Chat
+    # Initialize database connection
+    HAS_DB = db.connect()
+    if HAS_DB:
+        logger.info("Database connection established")
+    else:
+        logger.warning("Database connection failed. Chat tracking disabled.")
+except ImportError as e:
+    logger.warning(f"Could not import database models: {e}. Chat tracking disabled.")
     HAS_DB = False
-    app = None
 
 def start_bot(token):
     """
