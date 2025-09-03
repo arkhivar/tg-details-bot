@@ -25,6 +25,10 @@ if not BOT_TOKEN:
 # Initialize bot
 bot, dp = create_bot(BOT_TOKEN)
 
+# Set the bot instance as current for webhook processing
+from aiogram import Bot
+Bot.set_current(bot)
+
 # Create FastAPI app
 app = FastAPI(title="Telegram Info Bot", docs_url=None, redoc_url=None)
 

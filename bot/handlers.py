@@ -94,10 +94,10 @@ async def start_command(message: types.Message):
         # In private chats, show introduction
         keyboard = InlineKeyboardMarkup(row_width=2)
         keyboard.add(
-            InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-            InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
-            InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-            InlineKeyboardButton("👥 Members", callback_data="get_members")
+            InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+            InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
+            InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+            InlineKeyboardButton(text="👥 Members", callback_data="get_members")
         )
         
         await message.reply(
@@ -120,10 +120,10 @@ async def start_command(message: types.Message):
             
             keyboard = InlineKeyboardMarkup(row_width=2)
             keyboard.add(
-                InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-                InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-                InlineKeyboardButton("👥 Members", callback_data="get_members"),
-                InlineKeyboardButton("❓ Help", callback_data="show_help")
+                InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+                InlineKeyboardButton(text="❓ Help", callback_data="show_help")
             )
             
             await message.reply(
@@ -139,8 +139,8 @@ async def start_command(message: types.Message):
             # Fallback to simpler message
             keyboard = InlineKeyboardMarkup(row_width=2)
             keyboard.add(
-                InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-                InlineKeyboardButton("❓ Help", callback_data="show_help")
+                InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                InlineKeyboardButton(text="❓ Help", callback_data="show_help")
             )
             
             await message.reply(
@@ -157,12 +157,12 @@ async def help_command(message: types.Message):
     # Create inline keyboard with command buttons
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
-        InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-        InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
-        InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-        InlineKeyboardButton("👥 Members", callback_data="get_members"),
-        InlineKeyboardButton("👮‍♂️ Admins", callback_data="get_admins"),
-        InlineKeyboardButton("❓ Group ID Help", callback_data="group_id_help")
+        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+        InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
+        InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+        InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+        InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
+        InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help")
     )
     
     help_text = (
@@ -263,9 +263,9 @@ async def topics_command(message: types.Message):
             # Create keyboard
             keyboard = InlineKeyboardMarkup(row_width=2)
             keyboard.add(
-                InlineKeyboardButton("📋 Chat ID", callback_data="get_id"),
-                InlineKeyboardButton("ℹ️ More Info", callback_data="get_info"),
-                InlineKeyboardButton("❓ Help", callback_data="show_help")
+                InlineKeyboardButton(text="📋 Chat ID", callback_data="get_id"),
+                InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
+                InlineKeyboardButton(text="❓ Help", callback_data="show_help")
             )
             
             await message.reply(response, parse_mode="HTML", reply_markup=keyboard)
@@ -333,9 +333,9 @@ async def admins_command(message: types.Message):
         # Create inline keyboard with additional options
         keyboard = InlineKeyboardMarkup(row_width=2)
         keyboard.add(
-            InlineKeyboardButton("📋 Chat ID", callback_data="get_id"),
-            InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
-            InlineKeyboardButton("❓ Help", callback_data="show_help")
+            InlineKeyboardButton(text="📋 Chat ID", callback_data="get_id"),
+            InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
+            InlineKeyboardButton(text="❓ Help", callback_data="show_help")
         )
         
         # Send the formatted admin info
@@ -360,10 +360,10 @@ async def hello_command(message: types.Message):
         # Create keyboard with info buttons
         keyboard = InlineKeyboardMarkup(row_width=2)
         keyboard.add(
-            InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-            InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
-            InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-            InlineKeyboardButton("❓ Help", callback_data="show_help")
+            InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+            InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
+            InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+            InlineKeyboardButton(text="❓ Help", callback_data="show_help")
         )
         
         # Start with immediate basic response
@@ -415,8 +415,8 @@ async def new_chat_members(message: types.Message):
                 # First, send an immediate welcome message
                 initial_keyboard = InlineKeyboardMarkup(row_width=2)
                 initial_keyboard.add(
-                    InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton("❓ Help", callback_data="show_help")
+                    InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                    InlineKeyboardButton(text="❓ Help", callback_data="show_help")
                 )
                 
                 welcome_message = await message.reply(
@@ -446,18 +446,18 @@ async def new_chat_members(message: types.Message):
                 # Add different buttons based on whether it's a forum
                 if chat_info.get('is_forum'):
                     detailed_keyboard.add(
-                        InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-                        InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-                        InlineKeyboardButton("👥 Members", callback_data="get_members"),
-                        InlineKeyboardButton("📝 Topics", callback_data="get_topics"),
-                        InlineKeyboardButton("❓ Help", callback_data="show_help")
+                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                        InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                        InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+                        InlineKeyboardButton(text="📝 Topics", callback_data="get_topics"),
+                        InlineKeyboardButton(text="❓ Help", callback_data="show_help")
                     )
                 else:
                     detailed_keyboard.add(
-                        InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-                        InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-                        InlineKeyboardButton("👥 Members", callback_data="get_members"),
-                        InlineKeyboardButton("❓ Help", callback_data="show_help")
+                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                        InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                        InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+                        InlineKeyboardButton(text="❓ Help", callback_data="show_help")
                     )
                 
                 # Update the welcome message with detailed info
@@ -481,8 +481,8 @@ async def new_chat_members(message: types.Message):
                     # Create simple keyboard with fewer options
                     simple_keyboard = InlineKeyboardMarkup(row_width=2)
                     simple_keyboard.add(
-                        InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-                        InlineKeyboardButton("❓ Help", callback_data="show_help")
+                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                        InlineKeyboardButton(text="❓ Help", callback_data="show_help")
                     )
                     
                     await message.reply(
@@ -513,7 +513,7 @@ async def public_group_forward_handler(message: types.Message):
     # Create keyboard with help button
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
-        InlineKeyboardButton("❓ Why can't I get the group ID?", callback_data="group_id_help")
+        InlineKeyboardButton(text="❓ Why can't I get the group ID?", callback_data="group_id_help")
     )
     
     # First try to get direct chat information if available
@@ -670,7 +670,7 @@ async def simple_forward_handler(message: types.Message):
     # Keyboard for when we need help button
     help_keyboard = InlineKeyboardMarkup(row_width=1)
     help_keyboard.add(
-        InlineKeyboardButton("❓ Why can't I get the group ID?", callback_data="group_id_help")
+        InlineKeyboardButton(text="❓ Why can't I get the group ID?", callback_data="group_id_help")
     )
     
     # SECTION 1: SOURCE GROUP/CHANNEL INFO
@@ -834,14 +834,14 @@ async def simple_forward_handler(message: types.Message):
     
     if success:
         keyboard.add(
-            InlineKeyboardButton("ℹ️ More Info", callback_data="get_info"),
-            InlineKeyboardButton("❓ Help", callback_data="show_help")
+            InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
+            InlineKeyboardButton(text="❓ Help", callback_data="show_help")
         )
         await message.reply(forward_info, parse_mode="HTML", reply_markup=keyboard)
     else:
         keyboard.add(
-            InlineKeyboardButton("❓ Why can't I get the ID?", callback_data="group_id_help"),
-            InlineKeyboardButton("📚 Help", callback_data="show_help")
+            InlineKeyboardButton(text="❓ Why can't I get the ID?", callback_data="group_id_help"),
+            InlineKeyboardButton(text="📚 Help", callback_data="show_help")
         )
         await message.reply(forward_info, parse_mode="HTML", reply_markup=keyboard)
 
@@ -904,8 +904,8 @@ async def forward_handler(message: types.Message):
     # Create a nice formatted response with inline button options
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
-        InlineKeyboardButton("ℹ️ More Info", callback_data="get_info"),
-        InlineKeyboardButton("❓ Help", callback_data="show_help")
+        InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
+        InlineKeyboardButton(text="❓ Help", callback_data="show_help")
     )
     
     # Check for forward_origin with chat information (handles both channels and groups)
@@ -1242,9 +1242,9 @@ async def message_handler(message: types.Message):
         # Create inline keyboard with command buttons
         keyboard = InlineKeyboardMarkup(row_width=2)
         keyboard.add(
-            InlineKeyboardButton("ℹ️ More Info", callback_data="get_info"),
-            InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-            InlineKeyboardButton("❓ Help", callback_data="show_help")
+            InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
+            InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+            InlineKeyboardButton(text="❓ Help", callback_data="show_help")
         )
         
         await message.reply(
@@ -1286,7 +1286,7 @@ async def button_callback(callback_query: types.CallbackQuery):
         elif action == "get_id":
             # Create back button
             keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
+            keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
             
             await callback_query.message.edit_text(
                 f"🆔 <b>Chat ID</b>: <code>{chat_id}</code>", 
@@ -1300,7 +1300,7 @@ async def button_callback(callback_query: types.CallbackQuery):
             
             # Create back button
             keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
+            keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
             
             # If message is too long, send a new message instead of editing
             if len(formatted_info) > 4000:
@@ -1328,7 +1328,7 @@ async def button_callback(callback_query: types.CallbackQuery):
             
             # Create back button
             keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
+            keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
             
             await callback_query.message.edit_text(
                 f"<b>Chat Type</b>: {chat_type}\n{type_description}", 
@@ -1345,7 +1345,7 @@ async def button_callback(callback_query: types.CallbackQuery):
             
             # Create back button
             keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
+            keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
             
             if hasattr(chat, 'members_count') and chat.members_count is not None:
                 await callback_query.message.edit_text(
@@ -1371,7 +1371,7 @@ async def button_callback(callback_query: types.CallbackQuery):
                 
                 # Create back button
                 keyboard = InlineKeyboardMarkup()
-                keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
+                keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
                 
                 # If message is too long, send a new message instead of editing
                 if len(formatted_info) > 4000:
@@ -1393,7 +1393,7 @@ async def button_callback(callback_query: types.CallbackQuery):
                 
                 # Create back button
                 keyboard = InlineKeyboardMarkup()
-                keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
+                keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
                 
                 await callback_query.message.edit_text(
                     f"❌ Error getting administrator information: {str(e)}",
@@ -1433,7 +1433,7 @@ async def button_callback(callback_query: types.CallbackQuery):
                 
                 # Create back button
                 keyboard = InlineKeyboardMarkup(row_width=1)
-                keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
+                keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
                 
                 await callback_query.message.edit_text(
                     response,
@@ -1445,7 +1445,7 @@ async def button_callback(callback_query: types.CallbackQuery):
                 logger.error(f"Error getting topics info: {e}")
                 
                 keyboard = InlineKeyboardMarkup()
-                keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
+                keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
                 
                 await callback_query.message.edit_text(
                     f"❌ Error getting topic information: {str(e)}",
@@ -1455,7 +1455,7 @@ async def button_callback(callback_query: types.CallbackQuery):
         elif action == "group_id_help":
             # Provide detailed help about group ID limitations
             keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton("« Back", callback_data="show_help"))
+            keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
             
             explanation = (
                 "<b>📚 Why Can't I Get Group IDs from Forwards?</b>\n\n"
@@ -1498,22 +1498,22 @@ async def button_callback(callback_query: types.CallbackQuery):
             
             if is_forum:
                 keyboard.add(
-                    InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
-                    InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-                    InlineKeyboardButton("👥 Members", callback_data="get_members"),
-                    InlineKeyboardButton("📝 Topics", callback_data="get_topics"),
-                    InlineKeyboardButton("👮‍♂️ Admins", callback_data="get_admins"),
-                    InlineKeyboardButton("❓ Group ID Help", callback_data="group_id_help")
+                    InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                    InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
+                    InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                    InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+                    InlineKeyboardButton(text="📝 Topics", callback_data="get_topics"),
+                    InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
+                    InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help")
                 )
             else:
                 keyboard.add(
-                    InlineKeyboardButton("📋 Get Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton("ℹ️ Chat Info", callback_data="get_info"),
-                    InlineKeyboardButton("📊 Chat Type", callback_data="get_type"),
-                    InlineKeyboardButton("👥 Members", callback_data="get_members"),
-                    InlineKeyboardButton("👮‍♂️ Admins", callback_data="get_admins"),
-                    InlineKeyboardButton("❓ Group ID Help", callback_data="group_id_help")
+                    InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                    InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
+                    InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                    InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+                    InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
+                    InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help")
                 )
             
             help_text = (
