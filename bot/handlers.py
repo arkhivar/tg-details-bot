@@ -1,97 +1,18 @@
 import logging
-from datetime import datetime
 from aiogram import types
 from aiogram.dispatcher.filters import CommandHelp, CommandStart
-from aiogram.dispatcher.middlewares import BaseMiddleware
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from .utils import get_chat_info, format_chat_info, get_chat_admins, format_admin_info
 
 logger = logging.getLogger(__name__)
 
-class DatabaseMiddleware(BaseMiddleware):
-    """Middleware to handle database operations"""
-    
-    def __init__(self, db, chat_model):
-        """Initialize with the database and chat model"""
-        self.db = db
-        self.Chat = chat_model
-        self.update_queue = []  # Queue to store updates to process
-        super(DatabaseMiddleware, self).__init__()
-    
-    async def on_pre_process_message(self, message: types.Message, data: dict):
-        """Process message before handlers, update chat info in database"""
-        # Skip service messages like edited_message, etc.
-        if not message or not message.chat:
-            return
-        
-        # Always mark new messages in group chats for processing
-        try:
-            chat_id = message.chat.id
-            chat_type = message.chat.type
-            
-            # Use a simpler flag-based system not dependent on database
-            # Set a flag on the message object directly
-            if chat_type in ['group', 'supergroup']:
-                message.is_in_group = True
-                # Store basic info about the chat as first message
-                await self._save_chat_info_safely(message.bot, message.chat)
-            
-        except Exception as e:
-            logger.error(f"Error in message pre-processing: {e}")
-        
-    async def on_pre_process_callback_query(self, callback_query: types.CallbackQuery, data: dict):
-        """Process callback query, update chat info in database"""
-        if not callback_query.message or not callback_query.message.chat:
-            return
-        
-        # No database interactions in middleware
-    
-    async def _save_chat_info_safely(self, bot, chat):
-        """Update chat info in database"""
-        try:
-            if not self.db.connected:
-                return
-                
-            chat_id = chat.id
-            chat_type = chat.type
-            title = getattr(chat, 'title', None)
-            username = getattr(chat, 'username', None)
-            is_forum = getattr(chat, 'is_forum', False)
-            
-            # Update chat info in database
-            self.db.update_chat_info(
-                chat_id=str(chat_id),
-                title=title,
-                chat_type=chat_type,
-                username=username,
-                is_forum=is_forum
-            )
-            
-            logger.debug(f"Updated chat info for {chat_id}")
-            
-        except Exception as e:
-            logger.error(f"Error updating chat info: {e}")
-            logger.exception("Full exception details:")
-
-def register_handlers(dp, db_enabled=False):
+def register_handlers(dp):
     """
     Register message handlers for the bot.
     
     Args:
         dp: Aiogram dispatcher
-        db_enabled: Whether database functionality is enabled
     """
-    # Register global middleware for database support
-    if db_enabled:
-        import sys
-        import os
-        # Add the parent directory to sys.path to allow importing database
-        parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        sys.path.append(parent_dir)
-        
-        from database import db, Chat
-        # Store the db and Chat model for use in handlers
-        dp.middleware.setup(DatabaseMiddleware(db, Chat))
     
     # Command handlers
     dp.register_message_handler(start_command, CommandStart())
@@ -455,33 +376,8 @@ async def hello_command(message: types.Message):
             reply_markup=keyboard
         )
         
-        # Update database if needed
-        try:
-            from app import db, Chat
-            # Check if this chat is already in database
-            db_chat = db.session.query(Chat).filter_by(id=chat_id).first()
-            
-            if not db_chat:
-                logger.info(f"New chat detected via hello command: {chat_id}")
-                # Get full chat info
-                chat_info = await get_chat_info(message.bot, chat_id)
-                
-                # Create new database entry
-                new_chat = Chat(
-                    id=chat_id,
-                    title=chat_info.get('title'),
-                    type=chat_type,
-                    username=chat_info.get('username'),
-                    first_name=chat_info.get('first_name'),
-                    last_name=chat_info.get('last_name'),
-                    members_count=chat_info.get('members_count')
-                )
-                db.session.add(new_chat)
-                db.session.commit()
-                logger.info(f"Added new chat to database: {chat_id}")
-        except Exception as db_error:
-            logger.error(f"Database error in hello command: {db_error}")
-            # Continue even if database update fails
+        # Log chat interaction for stateless operation
+        logger.info(f"Hello command used in chat: {chat_id} ({chat_type})")
             
     except Exception as e:
         logger.error(f"Error in hello command: {e}")

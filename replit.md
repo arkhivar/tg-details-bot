@@ -1,8 +1,8 @@
 # Overview
 
-This is a Telegram Info Bot project that provides technical information about groups and channels. The bot can retrieve and display chat IDs, metadata, member counts, forum topic IDs, and other technical information when added to groups or channels. 
+This is a **lightweight, stateless Telegram Info Bot** optimized for webhook deployment and fast cold starts. The bot provides technical information about groups, channels, and forum topics without any persistent storage dependencies. Built for cost-effective autoscale deployment with minimal resource footprint.
 
-The application serves as a utility tool for Telegram administrators and developers who need to quickly access technical information about chats, including chat IDs, types, member counts, administrative details, and forum topic support.
+The application serves as a utility tool for Telegram administrators and developers who need quick access to technical chat information including chat IDs, forum topic detection, admin information, and forwarded message analysis without the complexity of database storage or long-running processes.
 
 # User Preferences
 
@@ -11,15 +11,15 @@ Preferred communication style: Simple, everyday language.
 # System Architecture
 
 ## Backend Architecture
-- **Aiogram Bot Framework**: Handles all Telegram bot interactions, message processing, and command handling
-- **Modular Handler System**: Bot handlers are organized in separate modules with middleware for database operations
-- **Database Integration**: SQLAlchemy ORM with a Chat model to track bot interactions and chat metadata
-- **Standalone Architecture**: Simplified bot-only design without web framework dependencies
+- **FastAPI Webhook Server**: Lightweight web server handling Telegram webhook requests with minimal overhead
+- **Aiogram Bot Framework**: Handles all Telegram bot interactions, message processing, and command handling  
+- **Stateless Operation**: No database dependencies or persistent storage for maximum performance
+- **Modular Handler System**: Bot handlers organized in separate modules optimized for webhook delivery
 
 ## Data Storage
-- **SQLAlchemy ORM**: Used for database abstraction with a declarative base model
-- **Chat Tracking Model**: Stores chat information including ID, title, type, username, member count, and activity timestamps
-- **Connection Pooling**: Configured with pool recycling and pre-ping for reliable database connections
+- **Pure Stateless Design**: No persistent storage or database dependencies
+- **Memory-Only Operation**: All processing handled in-memory for fastest response times
+- **Zero Configuration**: No database setup or connection management required
 
 ## Bot Architecture
 - **Command-Based Interface**: Supports commands like `/start`, `/help`, `/id`, `/info`, `/type`, `/members`, `/topics`, and `/admins`
@@ -42,9 +42,9 @@ Preferred communication style: Simple, everyday language.
 # External Dependencies
 
 ## Core Frameworks
-- **aiogram**: Telegram Bot API framework for Python
-- **SQLAlchemy**: ORM for database operations
-- **psycopg2-binary**: PostgreSQL database adapter
+- **FastAPI**: Lightweight ASGI web framework for webhook endpoints
+- **aiogram**: Telegram Bot API framework for Python in webhook mode
+- **uvicorn**: ASGI server for production deployment
 
 ## Bot Features
 - **Interactive Keyboards**: Dynamic inline button layouts that adapt to chat type
@@ -63,4 +63,4 @@ Preferred communication style: Simple, everyday language.
 
 ## Configuration Requirements
 - `TELEGRAM_BOT_TOKEN`: Bot token from Telegram BotFather
-- `DATABASE_URL`: PostgreSQL database connection string
+- Webhook URL: Set via set_webhook.py script after deployment
