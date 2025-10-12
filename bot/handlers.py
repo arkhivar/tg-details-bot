@@ -1522,14 +1522,8 @@ async def button_callback(callback_query: types.CallbackQuery):
             # Recreate the help keyboard  
             keyboard = InlineKeyboardMarkup(row_width=2)
 
-            # Check if this is a forum to add the Topics button
-            is_forum = False
-            try:
-                chat = await callback_query.bot.get_chat(chat_id)
-                is_forum = hasattr(chat, 'is_forum') and chat.is_forum
-            except Exception as e:
-                logger.warning(f"Could not check forum status: {e}")
-                is_forum = False
+            # Use simpler forum detection from message object instead of async call
+            is_forum = hasattr(callback_query.message.chat, 'is_forum') and callback_query.message.chat.is_forum
 
             if is_forum:
                 keyboard.add(
