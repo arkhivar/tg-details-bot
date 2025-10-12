@@ -1516,6 +1516,9 @@ async def button_callback(callback_query: types.CallbackQuery):
             )
 
         elif action == "show_help":
+            # Answer the callback immediately to remove loading state
+            await callback_query.answer()
+            
             # Recreate the help keyboard  
             keyboard = InlineKeyboardMarkup(row_width=2)
 
@@ -1574,11 +1577,13 @@ async def button_callback(callback_query: types.CallbackQuery):
                 )
             except Exception as e:
                 logger.error(f"Error editing message in show_help: {e}")
-                # If edit fails, try to answer the callback at least
-                await callback_query.answer("Error displaying help menu")
+                logger.exception("Full exception:")
+                # Don't try to answer again since we already did at the start
+                return
 
-        # Answer the callback query to remove the loading indicator
-        await callback_query.answer()
+        else:
+            # Answer the callback query to remove the loading indicator for other actions
+            await callback_query.answer()
 
     except Exception as e:
         logger.error(f"Error handling button callback: {e}")
