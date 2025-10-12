@@ -1566,11 +1566,12 @@ async def button_callback(callback_query: types.CallbackQuery):
                     parse_mode="HTML",
                     reply_markup=keyboard
                 )
-                await callback_query.answer()
             except Exception as e:
                 logger.error(f"Error editing message in show_help: {e}")
                 logger.exception("Full exception:")
-                await callback_query.answer("Error showing help menu")
+            finally:
+                # Always answer the callback query to remove loading state
+                await callback_query.answer()
 
         else:
             # Answer the callback query to remove the loading indicator for other actions
