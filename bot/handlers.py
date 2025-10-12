@@ -197,6 +197,18 @@ async def info_command(message: types.Message):
     try:
         chat_info = await get_chat_info(message.bot, message.chat.id)
         formatted_info = format_chat_info(chat_info)
+        
+        # Add forum topic detection if this is a forum
+        if chat_info.get('is_forum'):
+            from bot.utils import detect_topic_from_message
+            topic_info = detect_topic_from_message(message)
+            
+            if topic_info.get('topic_id'):
+                formatted_info += f"\n\n🎯 <b>Current Topic ID</b>: {topic_info['topic_id']}"
+                formatted_info += f"\n\n💡 <b>Tip</b>: Use /info for detailed information or /topics for forum-specific details"
+            else:
+                formatted_info += f"\n\n💡 <b>Tip</b>: Use /topics for forum-specific details"
+        
         await message.reply(formatted_info, parse_mode="HTML")
     except Exception as e:
         logger.error(f"Error getting chat info: {e}")
