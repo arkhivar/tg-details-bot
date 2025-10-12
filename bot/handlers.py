@@ -1248,25 +1248,56 @@ async def message_handler(message: types.Message):
     bot_username = bot_info.username
     
     if message.text and f"@{bot_username}" in message.text:
-        # Bot was mentioned, send basic info
+        # Bot was mentioned, send full detailed info
         logger.info(f"Bot was mentioned in chat: {chat_id}")
         
-        # Create inline keyboard with command buttons
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(
-            InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
-            InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-            InlineKeyboardButton(text="❓ Help", callback_data="show_help")
-        )
-        
-        await message.reply(
-            f"🤖 <b>Basic Chat Info</b>:\n"
-            f"🆔 <b>Chat ID</b>: <code>{chat_id}</code>\n"
-            f"📋 <b>Type</b>: {chat_type}\n\n"
-            f"Use /hello or /info for more details.",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
+        try:
+            # Get full chat info
+            chat_info = await get_chat_info(message.bot, chat_id)
+            formatted_info = format_chat_info(chat_info)
+            
+            # Add forum topic detection if this is a forum
+            if chat_info.get('is_forum'):
+                from bot.utils import detect_topic_from_message
+                topic_info = detect_topic_from_message(message)
+                
+                if topic_info.get('topic_id'):
+                    formatted_info += f"\n\n🎯 <b>Current Topic ID</b>: {topic_info['topic_id']}"
+                    formatted_info += f"\n\n💡 <b>Tip</b>: Use /info for detailed information or /topics for forum-specific details"
+                else:
+                    formatted_info += f"\n\n💡 <b>Tip</b>: Use /topics for forum-specific details"
+            
+            # Create inline keyboard with command buttons
+            keyboard = InlineKeyboardMarkup(row_width=2)
+            keyboard.add(
+                InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
+                InlineKeyboardButton(text="❓ Help", callback_data="show_help")
+            )
+            
+            await message.reply(
+                f"🤖 <b>Chat Information</b>\n\n{formatted_info}",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+            
+        except Exception as e:
+            logger.error(f"Error getting full chat info on mention: {e}")
+            
+            # Fallback to basic info if there's an error
+            keyboard = InlineKeyboardMarkup(row_width=2)
+            keyboard.add(
+                InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
+                InlineKeyboardButton(text="❓ Help", callback_data="show_help")
+            )
+            
+            await message.reply(
+                f"🤖 <b>Chat Info</b>:\n"
+                f"🆔 <b>Chat ID</b>: <code>{chat_id}</code>\n"
+                f"📋 <b>Type</b>: {chat_type}\n\n"
+                f"Use /info for more details.",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
 
 async def button_callback(callback_query: types.CallbackQuery):
     """Handler for inline button callbacks"""
