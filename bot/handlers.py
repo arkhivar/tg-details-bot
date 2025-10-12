@@ -1520,10 +1520,12 @@ async def button_callback(callback_query: types.CallbackQuery):
             keyboard = InlineKeyboardMarkup(row_width=2)
 
             # Check if this is a forum to add the Topics button
+            is_forum = False
             try:
                 chat = await callback_query.bot.get_chat(chat_id)
                 is_forum = hasattr(chat, 'is_forum') and chat.is_forum
-            except:
+            except Exception as e:
+                logger.warning(f"Could not check forum status: {e}")
                 is_forum = False
 
             if is_forum:
@@ -1564,11 +1566,16 @@ async def button_callback(callback_query: types.CallbackQuery):
                 "<i>Note: Some information may be limited based on my permissions and the chat type.</i>"
             )
 
-            await callback_query.message.edit_text(
-                help_text,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
+            try:
+                await callback_query.message.edit_text(
+                    help_text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                logger.error(f"Error editing message in show_help: {e}")
+                # If edit fails, try to answer the callback at least
+                await callback_query.answer("Error displaying help menu")
 
         # Answer the callback query to remove the loading indicator
         await callback_query.answer()
