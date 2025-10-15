@@ -1516,66 +1516,63 @@ async def button_callback(callback_query: types.CallbackQuery):
             )
 
         elif action == "show_help":
-            # Recreate the help keyboard  
-            keyboard = InlineKeyboardMarkup(row_width=2)
-
-            # Use simpler forum detection from message object instead of async call
-            is_forum = hasattr(callback_query.message.chat, 'is_forum') and callback_query.message.chat.is_forum
-
-            if is_forum:
-                keyboard.add(
-                    InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
-                    InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                    InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-                    InlineKeyboardButton(text="📝 Topics", callback_data="get_topics"),
-                    InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
-                    InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help")
-                )
-            else:
-                keyboard.add(
-                    InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
-                    InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                    InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-                    InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
-                    InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help")
-                )
-
-            help_text = (
-                "🔍 <b>Available Commands</b>:\n\n"
-                "/id - Get the current chat ID\n"
-                "/info - Display detailed information about this chat\n"
-                "/hello - Force the bot to respond with basic chat info\n"
-                "/type - Show the chat type (private, group, supergroup, channel)\n"
-                "/members - Get the number of members (when available)\n"
-                "/topics - Show forum topic information (for forum supergroups)\n"
-                "/admins - Get information about group administrators\n"
-                "/forward_help - Explain why group IDs from forwards sometimes don't work\n\n"
-                "📨 <b>Get Group/Channel IDs</b>:\n"
-                "<b>Method 1 (Recommended)</b>: Add me to the group/channel and use /id command.\n"
-                "<b>Method 2</b>: Forward a message from a public group/channel, and I'll show the source chat ID.\n\n"
-                "❓ <b>Trouble getting group IDs?</b> Use the Group ID Help button below.\n\n"
-                "You can also @mention me in a message to get basic chat info.\n\n"
-                "<i>Note: Some information may be limited based on my permissions and the chat type.</i>"
-            )
-
             try:
+                # Answer callback FIRST to remove loading state immediately
+                await callback_query.answer()
+                
+                # Recreate the help keyboard  
+                keyboard = InlineKeyboardMarkup(row_width=2)
+
+                # Use simpler forum detection from message object instead of async call
+                is_forum = hasattr(callback_query.message.chat, 'is_forum') and callback_query.message.chat.is_forum
+
+                if is_forum:
+                    keyboard.add(
+                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                        InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
+                        InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                        InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+                        InlineKeyboardButton(text="📝 Topics", callback_data="get_topics"),
+                        InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
+                        InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help")
+                    )
+                else:
+                    keyboard.add(
+                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                        InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
+                        InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                        InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+                        InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
+                        InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help")
+                    )
+
+                help_text = (
+                    "🔍 <b>Available Commands</b>:\n\n"
+                    "/id - Get the current chat ID\n"
+                    "/info - Display detailed information about this chat\n"
+                    "/hello - Force the bot to respond with basic chat info\n"
+                    "/type - Show the chat type (private, group, supergroup, channel)\n"
+                    "/members - Get the number of members (when available)\n"
+                    "/topics - Show forum topic information (for forum supergroups)\n"
+                    "/admins - Get information about group administrators\n"
+                    "/forward_help - Explain why group IDs from forwards sometimes don't work\n\n"
+                    "📨 <b>Get Group/Channel IDs</b>:\n"
+                    "<b>Method 1 (Recommended)</b>: Add me to the group/channel and use /id command.\n"
+                    "<b>Method 2</b>: Forward a message from a public group/channel, and I'll show the source chat ID.\n\n"
+                    "❓ <b>Trouble getting group IDs?</b> Use the Group ID Help button below.\n\n"
+                    "You can also @mention me in a message to get basic chat info.\n\n"
+                    "<i>Note: Some information may be limited based on my permissions and the chat type.</i>"
+                )
+
+                # Edit the message
                 await callback_query.message.edit_text(
                     help_text,
                     parse_mode="HTML",
                     reply_markup=keyboard
                 )
-                # Only answer callback AFTER successful edit
-                await callback_query.answer()
             except Exception as e:
-                logger.error(f"Error editing message in show_help: {e}")
+                logger.error(f"Error in show_help callback: {e}")
                 logger.exception("Full exception:")
-                # Still answer to remove loading state even on error
-                try:
-                    await callback_query.answer("Error showing help menu")
-                except:
-                    pass
 
         else:
             # Answer the callback query to remove the loading indicator for other actions
