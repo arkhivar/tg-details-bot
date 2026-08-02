@@ -34,10 +34,12 @@ The bot eliminates all database dependencies and chat tracking to achieve **mini
 
 ```
 ├── bot/
+│   ├── __init__.py        # Bot/dispatcher factory (create_bot) used by webhook mode
 │   ├── handlers.py        # All command and message handlers
 │   └── utils.py           # Helper functions for chat info, admin lists, formatting
-├── main.py                # Entry point (supports both polling and webhook modes)
-├── set_webhook.py         # Webhook configuration script
+├── main.py                # Entry point: FastAPI `app` (webhook) + `python main.py` (polling)
+├── set_webhook.py         # Webhook configuration script (--delete / --status flags)
+├── run_gunicorn.py        # Helper to launch gunicorn with uvicorn workers
 ├── gunicorn.conf.py       # Gunicorn production server config
 ├── .replit                # Replit deployment configuration
 └── pyproject.toml         # Python dependencies
@@ -162,13 +164,10 @@ See `/forward_help` command for detailed explanation of privacy limitations.
 ### Webhook Issues
 ```bash
 # Delete existing webhook
-python set_webhook.py
-# Enter empty URL when prompted to delete
+python set_webhook.py --delete
 
 # Check webhook status
-# Add this to set_webhook.py temporarily:
-# webhook_info = await bot.get_webhook_info()
-# print(webhook_info)
+python set_webhook.py --status
 ```
 
 ### Permission Errors
@@ -219,8 +218,8 @@ Uses `message.message_thread_id` to detect current topic. This is only available
 ## API Reference
 
 ### Main Endpoints (Webhook Mode)
-- `GET /` - Health check
-- `POST /webhook` - Telegram webhook receiver
+- `GET /` and `GET /health` - Health checks
+- `POST /webhook` - Telegram webhook receiver (validates `X-Telegram-Bot-Api-Secret-Token` header if `WEBHOOK_SECRET` is set)
 
 ### Key Functions in `bot/utils.py`
 - `get_chat_info(bot, chat_id)` - Retrieves comprehensive chat details
