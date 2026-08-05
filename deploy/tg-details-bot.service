@@ -1,0 +1,16 @@
+[Unit]
+Description=Telegram Info Bot (tg-details-bot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tgbot
+WorkingDirectory=/opt/tg-details-bot
+EnvironmentFile=/opt/tg-details-bot/.env
+ExecStart=/opt/tg-details-bot/venv/bin/python main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

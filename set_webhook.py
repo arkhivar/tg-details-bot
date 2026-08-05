@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 async def set_webhook(bot):
     """Interactively prompt for the deployed URL and set the webhook"""
     # This should be your deployed URL
-    webhook_url = input("Enter your deployed webhook URL (e.g., https://your-app.replit.app/webhook): ")
+    webhook_url = input("Enter your deployed webhook URL (e.g., https://bot.example.com/webhook): ")
 
     if not webhook_url.endswith('/webhook'):
         webhook_url += '/webhook'

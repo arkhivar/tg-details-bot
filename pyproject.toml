@@ -1,7 +1,7 @@
 [project]
-name = "repl-nix-workspace"
+name = "tg-details-bot"
 version = "0.1.0"
-description = "Add your description here"
+description = "Stateless Telegram info bot — chat/forum-topic IDs, admins, forward analysis"
 requires-python = ">=3.11"
 dependencies = [
     "aiogram==2.25.1",
