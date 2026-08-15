@@ -14,11 +14,23 @@ A **stateless Telegram info bot** for retrieving technical information about gro
 
 ## Requirements
 
-- **Python 3.11** — NOTE: aiogram 2.25.1 has no prebuilt aiohttp wheels for Python 3.12+, so use Python 3.11
-- A VM (any Linux box you control)
+- **Python 3.11** — hard requirement: aiogram 2.25.1 pins aiohttp<3.9, which cannot build on Python 3.12+
+- A VM (any Linux box you control, systemd-based)
 - A bot token from [@BotFather](https://t.me/BotFather)
 
-## Quick start (polling)
+## Fastest path: automated install
+
+One command, as root (installs Python 3.11 if needed, clones to `/opt/tg-details-bot`, creates the `tgbot` user, installs deps, enables + starts the systemd service):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arkhivar/tg-details-bot/main/deploy/install.sh | sudo TELEGRAM_BOT_TOKEN="your_token_here" bash
+```
+
+The script is idempotent — re-run it any time to update and restart the bot.
+
+> **Deploying with an AI agent** (OpenCode, etc.): clone this repo on the VM and tell the agent to run `sudo TELEGRAM_BOT_TOKEN="..." bash deploy/install.sh`. The script handles Python version checks, venv creation, the service user, and systemd. Without the token env var it installs everything and tells you exactly what to do next.
+
+## Quick start (manual, polling)
 
 ```bash
 git clone https://github.com/arkhivar/tg-details-bot.git
@@ -105,6 +117,7 @@ See `/forward_help` command for detailed explanation of privacy limitations.
 │   ├── handlers.py        # All command and message handlers
 │   └── utils.py           # Helper functions for chat info, admin lists, formatting
 ├── deploy/
+│   ├── install.sh            # One-command installer (root, idempotent)
 │   └── tg-details-bot.service  # systemd unit (polling mode)
 ├── main.py                # Entry point: FastAPI `app` (webhook) + `python main.py` (polling)
 ├── set_webhook.py         # Webhook configuration script (--delete / --status flags)
