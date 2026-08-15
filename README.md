@@ -8,19 +8,19 @@ A **stateless Telegram info bot** for retrieving technical information about gro
 - 📝 **Forum Topic Support**: Detect and extract topic IDs from forum supergroups
 - 👮‍♂️ **Admin Information**: Comprehensive administrator details with permissions
 - 📊 **Chat Analysis**: Type detection, member counts, and metadata
-- 🔄 **Forwarded Message Analysis**: Enhanced format for analyzing forwarded content with special handling for privacy-protected forwards
+- 🔄 **Forwarded Message Analysis**: Full source chat/user ID extraction via Bot API 7.0+ `forward_origin` (channels, anonymous-group forwards, users, and privacy-hidden users), with special handling for privacy-protected forwards
 - ⚡ **Stateless Design**: No database, minimal memory usage
 - 📨 **Interactive Keyboards**: Dynamic inline buttons that adapt to chat type (forum detection)
 
 ## Requirements
 
-- **Python 3.11** — hard requirement: aiogram 2.25.1 pins aiohttp<3.9, which cannot build on Python 3.12+
+- **Python 3.10+** — any modern Python works, including Ubuntu 24.04's native Python 3.12 (the bot uses aiogram 3.x)
 - A VM (any Linux box you control, systemd-based)
 - A bot token from [@BotFather](https://t.me/BotFather)
 
 ## Fastest path: automated install
 
-One command, as root (installs Python 3.11 if needed, clones to `/opt/tg-details-bot`, creates the `tgbot` user, installs deps, enables + starts the systemd service):
+One command, as root (verifies Python 3.10+, clones to `/opt/tg-details-bot`, creates the `tgbot` user, installs deps, enables + starts the systemd service):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/arkhivar/tg-details-bot/main/deploy/install.sh | sudo TELEGRAM_BOT_TOKEN="your_token_here" bash
@@ -35,7 +35,7 @@ The script is idempotent — re-run it any time to update and restart the bot.
 ```bash
 git clone https://github.com/arkhivar/tg-details-bot.git
 cd tg-details-bot
-python3.11 -m venv venv
+python3 -m venv venv
 venv/bin/pip install -r requirements.txt
 cp .env.example .env   # edit: set TELEGRAM_BOT_TOKEN
 venv/bin/python main.py
@@ -94,12 +94,13 @@ Optionally set `WEBHOOK_SECRET` in `.env` — it is sent as `secret_token` to Te
 ## Important Notes
 
 ### Forwarded Message Handling
-The bot has sophisticated logic for handling forwarded messages with Telegram's privacy restrictions:
+Forward detection is built on Bot API 7.0+ `forward_origin` (the legacy forward fields were removed by Telegram in December 2023). A single handler classifies every forward by origin type:
 
-1. **Public channels/groups**: Full chat ID extraction works
-2. **Private groups**: Only works if bot is a member
-3. **Privacy-protected forwards**: Shows user info but not source group ID
-4. **Text mentions**: Detects both @usernames and text-mentioned users without usernames
+1. **Channels** (`MessageOriginChannel`): full chat ID, title, @username, link, plus the original message ID and message link
+2. **Group-as-sender / anonymous admin forwards** (`MessageOriginChat`): source group ID, title, @username
+3. **Users** (`MessageOriginUser`): user ID, name, @username — with a note that Telegram shows the user, not the source group, for privacy reasons
+4. **Privacy-hidden users** (`MessageOriginHiddenUser`): name only; no ID is available by design
+5. **Text mentions**: Detects both @usernames and text-mentioned users without usernames
 
 See `/forward_help` command for detailed explanation of privacy limitations.
 
@@ -156,13 +157,10 @@ python set_webhook.py --status
 
 ## Development Notes
 
-### Handler Registration Order Matters!
-In `bot/handlers.py`, forward handlers are registered in specific order:
-1. Direct channel forwards (best case)
-2. Public group forwards with privacy settings
-3. Fallback for any remaining forwards
+### Handler Registration (aiogram 3.x)
+In `bot/handlers.py` all handlers live on one `Router`. The forward handler is registered with `@router.message(F.forward_origin)` **before** the generic `F.text` handler, so forwarded text messages are classified by their origin type (`channel` / `chat` / `user` / `hidden_user`) instead of falling through to the plain-text handler.
 
-This ensures the most specific handler catches each forward type first.
+The bot targets aiogram 3.x and Bot API 7.0+: the legacy forward fields no longer exist server-side, and the old aiogram exceptions module was replaced by `aiogram.exceptions`.
 
 ### Inline Keyboard Logic
 Buttons change based on chat type:

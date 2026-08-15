@@ -1,57 +1,9 @@
 import logging
 from datetime import datetime
 from aiogram import Bot
-from aiogram.utils.exceptions import ChatNotFound, Unauthorized
+from aiogram.exceptions import TelegramBadRequest, TelegramForbidden
 
 logger = logging.getLogger(__name__)
-
-async def get_forum_topics(bot: Bot, chat_id):
-    """
-    Get forum topics for a forum supergroup.
-    
-    Args:
-        bot: Aiogram Bot instance
-        chat_id: The ID of the forum chat
-        
-    Returns:
-        list: List of forum topic information
-    """
-    try:
-        logger.info(f"Attempting to get forum topics for chat {chat_id}")
-        
-        # Since aiogram 2.x doesn't have full forum support, we'll make a direct API call
-        # This is a workaround to get forum topic information
-        topics = []
-        
-        try:
-            # Try to make a direct API request to get forum topics
-            # Note: This requires the getForumTopics method which might not be in aiogram 2.x
-            
-            # For now, we'll detect if it's a forum and provide guidance
-            # The actual topic retrieval would need manual API implementation
-            
-            # Check if the bot has access to make requests
-            session = await bot.get_session()
-            if session:
-                logger.info("Bot session available - forum topic detection possible")
-                
-                # Here we would make the actual API call
-                # For now, we return empty list but log that it's a forum
-                logger.info("Forum detected - topic enumeration requires manual API calls")
-                
-                # Return empty list for now, but the calling function knows it's a forum
-                return []
-            else:
-                logger.warning("No bot session available for forum topic detection")
-                return []
-                
-        except Exception as e:
-            logger.warning(f"Could not retrieve forum topics via API: {e}")
-            return []
-            
-    except Exception as e:
-        logger.error(f"Error in forum topic detection: {e}")
-        return []
 
 def detect_topic_from_message(message):
     """
@@ -120,28 +72,29 @@ async def get_chat_info(bot: Bot, chat_id):
         }
 
         # Add the chat photo info if available
-        if hasattr(chat, "photo") and chat.photo:
+        if getattr(chat, "photo", None):
             info["has_photo"] = True
         else:
             info["has_photo"] = False
-        
-        # If this is a forum, try to get topics
-        if info.get("is_forum"):
-            logger.info(f"Detected forum chat {chat_id}, attempting to get topics")
-            topics = await get_forum_topics(bot, chat_id)
-            info["forum_topics"] = topics
-            info["forum_topics_count"] = len(topics)
-        
+
         return info
-    
-    except ChatNotFound:
-        logger.error(f"Chat {chat_id} not found")
-        raise Exception(f"Chat {chat_id} not found")
-    
-    except Unauthorized:
-        logger.error(f"Bot is not authorized to access chat {chat_id}")
+
+    except TelegramBadRequest as e:
+        # aiogram 3.x: "chat not found" and "unauthorized" both surface as TelegramBadRequest
+        if "chat not found" in str(e).lower():
+            logger.error(f"Chat {chat_id} not found")
+            raise Exception(f"Chat {chat_id} not found")
+        if "unauthorized" in str(e).lower() or "forbidden" in str(e).lower():
+            logger.error(f"Bot is not authorized to access chat {chat_id}")
+            raise Exception(f"Bot is not authorized to access this chat")
+        logger.error(f"Error getting chat info: {e}")
+        raise
+
+    except TelegramForbidden as e:
+        # aiogram 3.x raises TelegramForbidden (separate class) for kicked/blocked chats
+        logger.error(f"Bot is not authorized to access chat {chat_id}: {e}")
         raise Exception(f"Bot is not authorized to access this chat")
-    
+
     except Exception as e:
         logger.error(f"Error getting chat info: {e}")
         raise
@@ -208,12 +161,8 @@ def format_chat_info(info):
         technical_info.append(f"📊 <b>Is Forum</b>: {info['is_forum']}")
         
         # Add forum topics information if available
-        if info['is_forum'] and 'forum_topics_count' in info:
-            if info['forum_topics_count'] > 0:
-                technical_info.append(f"📝 <b>Forum Topics</b>: {info['forum_topics_count']} topics found")
-                # Note: We could show topic details here if we had them
-            else:
-                technical_info.append(f"📝 <b>Forum Topics</b>: No topics detected or access limited")
+        if info['is_forum']:
+            technical_info.append("📝 <b>Forum Topics</b>: Use /topics from inside a topic to get its ID")
     
     if info['slow_mode_delay'] is not None and info['slow_mode_delay'] > 0:
         technical_info.append(f"⏱ <b>Slow Mode Delay</b>: {info['slow_mode_delay']} seconds")

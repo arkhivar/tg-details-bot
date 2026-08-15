@@ -2,10 +2,9 @@
 name = "tg-details-bot"
 version = "0.1.0"
 description = "Stateless Telegram info bot — chat/forum-topic IDs, admins, forward analysis"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
-    "aiogram==2.25.1",
-    "email-validator>=2.2.0",
+    "aiogram>=3.15,<4.0",
     "fastapi>=0.116.1",
     "gunicorn>=23.0.0",
     "python-dotenv>=1.1.0",

@@ -20,26 +20,29 @@ die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "Run as root (sudo bash deploy/install.sh)"
 
-# --- 1. Python 3.11 (hard requirement: aiogram 2.25.1 pins aiohttp<3.9, which
-#         cannot build on Python 3.12+) --------------------------------------
-if ! command -v python3.11 >/dev/null 2>&1; then
-    log "python3.11 not found, trying to install it"
+# --- 1. Python 3.10+ (aiogram 3.x works on any modern Python, including
+#         Ubuntu 24.04's native Python 3.12) -----------------------------------
+command -v python3 >/dev/null 2>&1 || {
+    log "python3 not found, trying to install it"
     if command -v apt-get >/dev/null 2>&1; then
         apt-get update -qq
-        apt-get install -y -qq python3.11 python3.11-venv || die "\
-Could not install python3.11 via apt.
-On Ubuntu 24.04+ / Debian 13+ run first:
-    apt install software-properties-common && add-apt-repository ppa:deadsnakes/ppa
-then re-run this script. Any Python 3.11.x works."
+        apt-get install -y -qq python3 || die "Could not install python3 via apt. Install Python 3.10+ manually, then re-run."
     else
-        die "python3.11 is required but not installed, and this script only auto-installs on apt-based systems. Install Python 3.11 manually, then re-run."
+        die "python3 (>= 3.10) is required but not installed, and this script only auto-installs on apt-based systems. Install Python 3.10+ manually, then re-run."
     fi
-fi
-python3.11 -m venv --help >/dev/null 2>&1 || {
-    log "installing python3.11-venv"
-    apt-get install -y -qq python3.11-venv || die "python3.11-venv missing and could not be installed"
 }
-log "using $(python3.11 --version)"
+python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || \
+    die "Python >= 3.10 is required (found: $(python3 --version 2>&1)). Install a newer Python, then re-run."
+python3 -c 'import ensurepip' >/dev/null 2>&1 || {
+    log "installing python3-venv"
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -qq
+        apt-get install -y -qq python3-venv python3-full || die "python3-venv missing and could not be installed"
+    else
+        die "python3 venv module missing. Install it (e.g. apt install python3-venv python3-full), then re-run."
+    fi
+}
+log "using $(python3 --version)"
 
 # --- 2. Code -----------------------------------------------------------------
 if [ -d "$INSTALL_DIR/.git" ]; then
@@ -58,7 +61,7 @@ fi
 cd "$INSTALL_DIR"
 
 # --- 3. Virtualenv + dependencies --------------------------------------------
-[ -x venv/bin/python ] || { log "creating venv"; python3.11 -m venv venv; }
+[ -x venv/bin/python ] || { log "creating venv"; python3 -m venv venv; }
 log "installing dependencies"
 venv/bin/pip install -q --upgrade pip
 venv/bin/pip install -q -r requirements.txt

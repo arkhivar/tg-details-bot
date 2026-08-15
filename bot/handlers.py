@@ -1,10 +1,15 @@
 import logging
-from aiogram import types
-from aiogram.dispatcher.filters import CommandHelp, CommandStart
+from aiogram import F, Router, types
+from aiogram.filters import Command, CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from .utils import get_chat_info, format_chat_info, get_chat_admins, format_admin_info
+from .utils import get_chat_info, format_chat_info, get_chat_admins, format_admin_info, detect_topic_from_message
 
 logger = logging.getLogger(__name__)
+
+router = Router()
+
+ALL_CALLBACKS = {"get_id", "get_info", "get_type", "get_members", "get_admins", "get_topics", "group_id_help", "show_help"}
+
 
 def register_handlers(dp):
     """
@@ -13,78 +18,14 @@ def register_handlers(dp):
     Args:
         dp: Aiogram dispatcher
     """
+    dp.include_router(router)
 
-    # Command handlers
-    dp.register_message_handler(start_command, CommandStart())
-    dp.register_message_handler(help_command, CommandHelp())
-    dp.register_message_handler(id_command, commands=['id'])
-    dp.register_message_handler(info_command, commands=['info'])
-    dp.register_message_handler(type_command, commands=['type'])
-    dp.register_message_handler(members_command, commands=['members'])
-    dp.register_message_handler(topics_command, commands=['topics'])  # Forum topics command
-    dp.register_message_handler(hello_command, commands=['hello'])  # Added explicit hello command
-    dp.register_message_handler(admins_command, commands=['admins'])  # Admin information command
-    dp.register_message_handler(forward_help_command, commands=['forward_help'])  # Special command to explain forward limitations
 
-    # New chat members handler
-    dp.register_message_handler(new_chat_members, content_types=types.ContentTypes.NEW_CHAT_MEMBERS)
+# ---------------------------------------------------------------------------
+# Command handlers
+# ---------------------------------------------------------------------------
 
-    # Register specialized forward handlers first - order matters!
-
-    # First: Handler for direct channel forwards where we can get the chat ID directly
-    dp.register_message_handler(
-        simple_forward_handler,
-        lambda message: (
-            hasattr(message, 'forward_date') and message.forward_date is not None and
-            (message.forward_from_chat is not None or
-             (hasattr(message, 'forward_origin') and 
-              hasattr(message.forward_origin, 'chat') and 
-              message.forward_origin.chat is not None))
-        ),
-        content_types=types.ContentTypes.ANY
-    )
-
-    # Second: Handler for public group forwards that need special explanation
-    dp.register_message_handler(
-        public_group_forward_handler,
-        lambda message: (
-            hasattr(message, 'forward_date') and message.forward_date is not None and 
-            (
-                # Direct check for group origins
-                (hasattr(message, 'forward_origin') and 
-                 getattr(message.forward_origin, 'type', '') in ['channel', 'chat', 'group']) or
-
-                # Public group with privacy settings (user origin but text suggests it's from a group)
-                (hasattr(message, 'caption') and message.caption and '@' in message.caption) or
-                (hasattr(message, 'text') and message.text and '@' in message.text) or
-
-                # Message has entities that suggest it's from a group but not accessible
-                (hasattr(message, 'caption_entities') and message.caption_entities) or
-                (hasattr(message, 'entities') and message.entities and 
-                 any(e.type == 'mention' for e in message.entities)) or
-
-                # Message is forwarded from user but has group context clues
-                (hasattr(message, 'forward_from') and message.forward_from and 
-                 hasattr(message, 'text') and message.text and 
-                 ('<' in message.text or '>' in message.text))
-            )
-        ),
-        content_types=types.ContentTypes.ANY
-    )
-
-    # Last: Fallback handler for any remaining forwards
-    dp.register_message_handler(
-        simple_forward_handler, 
-        lambda message: hasattr(message, 'forward_date') and message.forward_date is not None,
-        content_types=types.ContentTypes.ANY
-    )
-
-    # General message handler (will provide info when bot is @mentioned)
-    dp.register_message_handler(message_handler, content_types=types.ContentTypes.TEXT)
-
-    # Callback query handler for inline buttons
-    dp.register_callback_query_handler(button_callback, lambda c: c.data and (c.data.startswith('get_') or c.data in ('group_id_help', 'show_help')))
-
+@router.message(CommandStart())
 async def start_command(message: types.Message):
     """Handler for /start command"""
     chat_type = message.chat.type
@@ -92,13 +33,16 @@ async def start_command(message: types.Message):
     # Different response based on chat type
     if chat_type == 'private':
         # In private chats, show introduction
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(
-            InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-            InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
-            InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-            InlineKeyboardButton(text="👥 Members", callback_data="get_members")
-        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
+            ],
+            [
+                InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+            ],
+        ])
 
         await message.reply(
             "👋 Hello! I'm a Telegram Info Bot.\n\n"
@@ -118,13 +62,16 @@ async def start_command(message: types.Message):
             chat_info = await get_chat_info(message.bot, message.chat.id)
             formatted_info = format_chat_info(chat_info)
 
-            keyboard = InlineKeyboardMarkup(row_width=2)
-            keyboard.add(
-                InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-                InlineKeyboardButton(text="❓ Help", callback_data="show_help")
-            )
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                    InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                ],
+                [
+                    InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+                    InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
+                ],
+            ])
 
             await message.reply(
                 "👋 <b>Hello!</b> I'm a Telegram Info Bot.\n\n"
@@ -137,11 +84,12 @@ async def start_command(message: types.Message):
             logger.exception("Full exception details:")
 
             # Fallback to simpler message
-            keyboard = InlineKeyboardMarkup(row_width=2)
-            keyboard.add(
-                InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                InlineKeyboardButton(text="❓ Help", callback_data="show_help")
-            )
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                    InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
+                ],
+            ])
 
             await message.reply(
                 f"👋 <b>Hello!</b> I'm a Telegram Info Bot.\n\n"
@@ -152,18 +100,25 @@ async def start_command(message: types.Message):
                 reply_markup=keyboard
             )
 
+
+@router.message(Command("help"))
 async def help_command(message: types.Message):
     """Handler for /help command"""
     # Create inline keyboard with command buttons
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-        InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
-        InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-        InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-        InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
-        InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+            InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
+        ],
+        [
+            InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+            InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+        ],
+        [
+            InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
+            InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help"),
+        ],
+    ])
 
     help_text = (
         "🔍 <b>Available Commands</b>:\n\n"
@@ -187,11 +142,15 @@ async def help_command(message: types.Message):
     )
     await message.reply(help_text, parse_mode="HTML", reply_markup=keyboard)
 
+
+@router.message(Command("id"))
 async def id_command(message: types.Message):
     """Handler for /id command"""
     chat_id = message.chat.id
     await message.reply(f"🆔 <b>Chat ID</b>: <code>{chat_id}</code>", parse_mode="HTML")
 
+
+@router.message(Command("info"))
 async def info_command(message: types.Message):
     """Handler for /info command"""
     try:
@@ -200,7 +159,6 @@ async def info_command(message: types.Message):
 
         # Add forum topic detection if this is a forum
         if chat_info.get('is_forum'):
-            from bot.utils import detect_topic_from_message
             topic_info = detect_topic_from_message(message)
 
             if topic_info.get('topic_id'):
@@ -214,6 +172,8 @@ async def info_command(message: types.Message):
         logger.error(f"Error getting chat info: {e}")
         await message.reply(f"❌ Error getting chat information: {str(e)}")
 
+
+@router.message(Command("type"))
 async def type_command(message: types.Message):
     """Handler for /type command"""
     chat_type = message.chat.type
@@ -226,6 +186,8 @@ async def type_command(message: types.Message):
 
     await message.reply(f"<b>Chat Type</b>: {chat_type}\n{type_description}", parse_mode="HTML")
 
+
+@router.message(Command("members"))
 async def members_command(message: types.Message):
     """Handler for /members command"""
     try:
@@ -240,6 +202,8 @@ async def members_command(message: types.Message):
         logger.error(f"Error getting members count: {e}")
         await message.reply(f"❌ Error getting member count: {str(e)}")
 
+
+@router.message(Command("topics"))
 async def topics_command(message: types.Message):
     """Handler for /topics command - shows forum topic information"""
     try:
@@ -248,9 +212,8 @@ async def topics_command(message: types.Message):
             return
 
         # Check if this is a forum
-        if hasattr(message.chat, 'is_forum') and message.chat.is_forum:
+        if getattr(message.chat, 'is_forum', False):
             # Get topic information from current message
-            from bot.utils import detect_topic_from_message
             topic_info = detect_topic_from_message(message)
 
             response = f"📝 <b>Forum Topics Information</b>\n\n"
@@ -269,12 +232,15 @@ async def topics_command(message: types.Message):
             response += f"🔧 <b>For Developers</b>: Use the topic ID as the message_thread_id when sending messages to specific topics via the Bot API."
 
             # Create keyboard
-            keyboard = InlineKeyboardMarkup(row_width=2)
-            keyboard.add(
-                InlineKeyboardButton(text="📋 Chat ID", callback_data="get_id"),
-                InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
-                InlineKeyboardButton(text="❓ Help", callback_data="show_help")
-            )
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="📋 Chat ID", callback_data="get_id"),
+                    InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
+                ],
+                [
+                    InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
+                ],
+            ])
 
             await message.reply(response, parse_mode="HTML", reply_markup=keyboard)
         else:
@@ -282,7 +248,7 @@ async def topics_command(message: types.Message):
                 "📝 <b>Forum Topics</b>\n\n"
                 "This chat is not a forum supergroup. Forum topics are only available in forum-enabled supergroups.\n\n"
                 "To use forum features:\n"
-                "1. Create or convert a supergroup to a forum\n" 
+                "1. Create or convert a supergroup to a forum\n"
                 "2. Enable 'Topics' in the group settings\n"
                 "3. Add this bot to the forum group",
                 parse_mode="HTML"
@@ -292,68 +258,8 @@ async def topics_command(message: types.Message):
         logger.error(f"Error in topics command: {e}")
         await message.reply(f"❌ Error getting topic information: {str(e)}")
 
-async def forward_help_command(message: types.Message):
-    """Dedicated command to explain why group IDs might not be available in forwards"""
-    explanation = (
-        "<b>📚 Why Can't I Get Group IDs from Forwards?</b>\n\n"
-        "This is a common issue with Telegram's privacy design:\n\n"
-        "<b>Technical Explanation:</b>\n"
-        "• When forwarding from public groups, Telegram intentionally hides the original group ID\n"
-        "• The forward appears to come from the original sender (user) instead of the group\n"
-        "• This is a privacy feature by design, not a limitation of this bot\n"
-        "• Even in forwards from public groups, Telegram only shows user information\n\n"
 
-        "<b>Why This Happens:</b>\n"
-        "Telegram does this to prevent tracking and data collection across groups. Only bot developers "
-        "who add their bots to groups can access group IDs directly.\n\n"
-
-        "<b>Solutions:</b>\n"
-        "1️⃣ <b>Add this bot directly to the group</b> (recommended)\n"
-        "2️⃣ For public groups, use @username instead of ID in API calls\n"
-        "3️⃣ For user accounts (not bots), open forwarded message in Telegram apps and look for the source group link\n"
-        "4️⃣ For private groups, add this bot as member\n\n"
-
-        "<b>In your screenshot:</b>\n"
-        "The message was detected as a user forward because Telegram provides the user info, not the group info, "
-        "even though it originated in a group.\n\n"
-
-        "If you need more technical explanations, feel free to ask!"
-    )
-
-    await message.reply(explanation, parse_mode="HTML")
-
-async def admins_command(message: types.Message):
-    """Handler for /admins command - display administrators information"""
-    try:
-        # Check if this is a group or channel
-        if message.chat.type == "private":
-            await message.reply("This command only works in groups and channels.")
-            return
-
-        # Let user know we're processing
-        processing_msg = await message.reply("👮‍♂️ Getting administrators information...")
-
-        # Get admins info
-        chat_id = message.chat.id
-        admins_info = await get_chat_admins(message.bot, chat_id)
-        formatted_info = format_admin_info(admins_info)
-
-        # Create back button - always use show_help which handles forum detection
-        keyboard = InlineKeyboardMarkup()
-        keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
-
-        # Send the formatted admin info
-        await processing_msg.edit_text(
-            formatted_info,
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-
-    except Exception as e:
-        logger.error(f"Error getting admin information: {e}")
-        logger.exception("Full exception details:")
-        await message.reply(f"❌ Error getting administrator information: {str(e)}")
-
+@router.message(Command("hello"))
 async def hello_command(message: types.Message):
     """Handler for /hello command - an explicit command to get bot to respond"""
     try:
@@ -362,13 +268,16 @@ async def hello_command(message: types.Message):
         chat_type = message.chat.type
 
         # Create keyboard with info buttons
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(
-            InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-            InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
-            InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-            InlineKeyboardButton(text="❓ Help", callback_data="show_help")
-        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
+            ],
+            [
+                InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
+            ],
+        ])
 
         # Start with immediate basic response
         await message.reply(
@@ -395,6 +304,75 @@ async def hello_command(message: types.Message):
             parse_mode="HTML"
         )
 
+
+@router.message(Command("admins"))
+async def admins_command(message: types.Message):
+    """Handler for /admins command - display administrators information"""
+    try:
+        # Check if this is a group or channel
+        if message.chat.type == "private":
+            await message.reply("This command only works in groups and channels.")
+            return
+
+        # Let user know we're processing
+        processing_msg = await message.reply("👮‍♂️ Getting administrators information...")
+
+        # Get admins info
+        chat_id = message.chat.id
+        admins_info = await get_chat_admins(message.bot, chat_id)
+        formatted_info = format_admin_info(admins_info)
+
+        # Create back button - always use show_help which handles forum detection
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="« Back", callback_data="show_help")],
+        ])
+
+        # Send the formatted admin info
+        await processing_msg.edit_text(
+            formatted_info,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting admin information: {e}")
+        logger.exception("Full exception details:")
+        await message.reply(f"❌ Error getting administrator information: {str(e)}")
+
+
+@router.message(Command("forward_help"))
+async def forward_help_command(message: types.Message):
+    """Dedicated command to explain why group IDs might not be available in forwards"""
+    explanation = (
+        "<b>📚 Why Can't I Get Group IDs from Forwards?</b>\n\n"
+        "This is a common issue with Telegram's privacy design:\n\n"
+        "<b>Technical Explanation:</b>\n"
+        "• When forwarding from public groups, Telegram intentionally hides the original group ID\n"
+        "• The forward appears to come from the original sender (user) instead of the group\n"
+        "• This is a privacy feature by design, not a limitation of this bot\n"
+        "• Even in forwards from public groups, Telegram only shows user information\n\n"
+
+        "<b>Why This Happens:</b>\n"
+        "Telegram does this to prevent tracking and data collection across groups. Only bot developers "
+        "who add their bots to groups can access group IDs directly.\n\n"
+
+        "<b>Solutions:</b>\n"
+        "1️⃣ <b>Add this bot directly to the group</b> (recommended)\n"
+        "2️⃣ For public groups, use @username instead of ID in API calls\n"
+        "3️⃣ For user accounts (not bots), open forwarded message in Telegram apps and look for the source group link\n"
+        "4️⃣ For private groups, add this bot as member\n\n"
+
+        "If you need more technical explanations, feel free to ask!"
+    )
+
+    await message.reply(explanation, parse_mode="HTML")
+
+
+# ---------------------------------------------------------------------------
+# Welcome flow: bot added to a chat
+# ---------------------------------------------------------------------------
+
+@router.message(F.new_chat_members)
 async def new_chat_members(message: types.Message):
     """Handler for new_chat_members event"""
     # Print all new members for debugging
@@ -407,21 +385,20 @@ async def new_chat_members(message: types.Message):
     logger.info(f"Bot ID is: {bot_id}")
 
     # Check if our bot is among the new members
-    bot_added = False
     for user in message.new_chat_members:
         logger.info(f"Checking user: {user.id} vs bot: {bot_id}")
         if user.id == bot_id:
-            bot_added = True
             logger.info(f"Bot was added to chat: {message.chat.id} - {message.chat.title}")
 
             # Bot was added to a new chat, send info immediately
             try:
                 # First, send an immediate welcome message
-                initial_keyboard = InlineKeyboardMarkup(row_width=2)
-                initial_keyboard.add(
-                    InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton(text="❓ Help", callback_data="show_help")
-                )
+                initial_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                        InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
+                    ],
+                ])
 
                 welcome_message = await message.reply(
                     "👋 <b>Hello everyone!</b> I'm a bot that provides technical information about Telegram chats.\n\n"
@@ -436,7 +413,6 @@ async def new_chat_members(message: types.Message):
                 # Check if this is a forum and add topic information
                 topic_info_text = ""
                 if chat_info.get('is_forum'):
-                    from bot.utils import detect_topic_from_message
                     topic_info = detect_topic_from_message(message)
                     if topic_info.get('topic_id'):
                         topic_info_text = f"\n🎯 <b>Current Topic ID</b>: <code>{topic_info['topic_id']}</code>\n💡 <b>Use /topics command to get more topic information</b>\n"
@@ -446,23 +422,32 @@ async def new_chat_members(message: types.Message):
                 formatted_info = format_chat_info(chat_info) + topic_info_text
 
                 # Create detailed inline keyboard with command buttons
-                detailed_keyboard = InlineKeyboardMarkup(row_width=2)
                 # Add different buttons based on whether it's a forum
                 if chat_info.get('is_forum'):
-                    detailed_keyboard.add(
-                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                        InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                        InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-                        InlineKeyboardButton(text="📝 Topics", callback_data="get_topics"),
-                        InlineKeyboardButton(text="❓ Help", callback_data="show_help")
-                    )
+                    detailed_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                            InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                        ],
+                        [
+                            InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+                            InlineKeyboardButton(text="📝 Topics", callback_data="get_topics"),
+                        ],
+                        [
+                            InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
+                        ],
+                    ])
                 else:
-                    detailed_keyboard.add(
-                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                        InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                        InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-                        InlineKeyboardButton(text="❓ Help", callback_data="show_help")
-                    )
+                    detailed_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                            InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                        ],
+                        [
+                            InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+                            InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
+                        ],
+                    ])
 
                 # Update the welcome message with detailed info
                 await welcome_message.edit_text(
@@ -483,11 +468,12 @@ async def new_chat_members(message: types.Message):
                 # If there was an error getting detailed info, send a simpler message
                 try:
                     # Create simple keyboard with fewer options
-                    simple_keyboard = InlineKeyboardMarkup(row_width=2)
-                    simple_keyboard.add(
-                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                        InlineKeyboardButton(text="❓ Help", callback_data="show_help")
-                    )
+                    simple_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                            InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
+                        ],
+                    ])
 
                     await message.reply(
                         "👋 <b>Thanks for adding me!</b>\n\n"
@@ -500,355 +486,152 @@ async def new_chat_members(message: types.Message):
                 except Exception as inner_e:
                     logger.error(f"Failed to send fallback welcome message: {inner_e}")
 
-async def public_group_forward_handler(message: types.Message):
-    """Handler specifically for public group forwards that need special explanation"""
-    logger.info(f"=== PUBLIC GROUP FORWARD DETECTED ===")
-    if hasattr(message, 'to_python'):
-        logger.info(f"Message data: {message.to_python()}")
 
-    # Extract as much information as possible from the forwarded message
-    has_forward_origin = hasattr(message, 'forward_origin')
-    has_forward_from = message.forward_from is not None
-    has_forward_from_chat = message.forward_from_chat is not None
-    has_forward_sender_name = hasattr(message, 'forward_sender_name') and message.forward_sender_name
+# ---------------------------------------------------------------------------
+# Forwarded message analysis (Bot API 7.0+ forward_origin)
+# ---------------------------------------------------------------------------
+# Bot API 7.0 removed the legacy forward fields (origin user/chat/date).
+# All forwards now arrive with a typed `forward_origin` object:
+#   - MessageOriginChannel:    .chat, .message_id, .author_signature, .date
+#   - MessageOriginChat:       .sender_chat, .date
+#   - MessageOriginUser:       .sender_user, .date
+#   - MessageOriginHiddenUser: .sender_user_name, .date
+# ---------------------------------------------------------------------------
 
-    logger.info(f"Forward detection: origin={has_forward_origin}, from={has_forward_from}, from_chat={has_forward_from_chat}, sender_name={has_forward_sender_name}")
-
-    # Create keyboard with help button
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        InlineKeyboardButton(text="❓ Why can't I get the group ID?", callback_data="group_id_help")
-    )
-
-    # First try to get direct chat information if available
-    if has_forward_from_chat:
-        # This is the best case - we have direct chat info
-        chat = message.forward_from_chat
-        forward_info = (
-            f"📨 <b>Forwarded Message Info</b>\n\n"
-            f"✅ <b>SUCCESS</b>: Chat information found!\n\n"
-            f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
-            f"📋 <b>Chat Type</b>: {chat.type}\n"
-        )
-
-        if getattr(chat, 'title', None):
-            forward_info += f"📢 <b>Title</b>: {chat.title}\n"
-
-        if getattr(chat, 'username', None):
-            forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
-            forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
-
-        await message.reply(forward_info, parse_mode="HTML")
-        return
-
-    # Second, try to extract from forward_origin
-    if has_forward_origin:
-        origin_type = getattr(message.forward_origin, 'type', 'unknown')
-        logger.info(f"Forward origin type: {origin_type}")
-
-        # Check if we have sender_chat in origin
-        if hasattr(message.forward_origin, 'sender_chat') and message.forward_origin.sender_chat:
-            chat = message.forward_origin.sender_chat
-            forward_info = (
-                f"📨 <b>Forwarded Message Info</b>\n\n"
-                f"✅ <b>SUCCESS</b>: Chat information found!\n\n"
-                f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
-                f"📋 <b>Chat Type</b>: {getattr(chat, 'type', 'unknown')}\n"
-            )
-
-            if getattr(chat, 'title', None):
-                forward_info += f"📢 <b>Title</b>: {chat.title}\n"
-
-            if getattr(chat, 'username', None):
-                forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
-                forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
-
-            await message.reply(forward_info, parse_mode="HTML")
-            return
-
-        # Check if we have direct chat attribute
-        if hasattr(message.forward_origin, 'chat') and message.forward_origin.chat:
-            chat = message.forward_origin.chat
-            forward_info = (
-                f"📨 <b>Forwarded Message Info</b>\n\n"
-                f"✅ <b>SUCCESS</b>: Chat information found!\n\n"
-                f"🆔 <b>Chat ID</b>: <code>{chat.id}</code>\n"
-                f"📋 <b>Chat Type</b>: {getattr(chat, 'type', 'unknown')}\n"
-            )
-
-            if getattr(chat, 'title', None):
-                forward_info += f"📢 <b>Title</b>: {chat.title}\n"
-
-            if getattr(chat, 'username', None):
-                forward_info += f"👤 <b>Username</b>: @{chat.username}\n"
-                forward_info += f"🔗 <b>Link</b>: https://t.me/{chat.username}\n"
-
-            await message.reply(forward_info, parse_mode="HTML")
-            return
-
-    # If we got here, we couldn't get the group ID - create detailed explanation
-    forward_info = (
-        f"📨 <b>Forwarded Message Info</b>\n\n"
-        f"❌ <b>UNABLE TO GET GROUP ID</b>\n\n"
-        f"ℹ️ Due to Telegram's API limitations, this bot cannot extract the original group ID from this forwarded message.\n\n"
-        f"This typically happens with public groups where the bot is not a member.\n\n"
-        f"💡 <b>Solutions:</b>\n"
-        f"1. Add this bot to the group directly\n"
-        f"2. Forward a message from a channel or a private group\n"
-        f"3. If you're an admin, temporarily toggle the group to private, forward a message, then set it back\n\n"
-        f"If the group has an @username, you can access it via the API with that username instead of an ID."
-    )
-
-    # Try to extract any identifiable information
-    if hasattr(message, 'forward_origin') and message.forward_origin:
-        # Get any user information if available
-        if hasattr(message.forward_origin, 'sender_user') and message.forward_origin.sender_user:
-            user = message.forward_origin.sender_user
-            forward_info += f"\n👤 <b>User ID</b>: <code>{user.id}</code>\n"
-
-            if getattr(user, 'username', None):
-                forward_info += f"👤 <b>Username</b>: @{user.username}\n"
-                forward_info += f"🔗 <b>Link</b>: https://t.me/{user.username}\n"
-
-            name_parts = []
-            if getattr(user, 'first_name', None):
-                name_parts.append(user.first_name)
-            if getattr(user, 'last_name', None):
-                name_parts.append(user.last_name)
-
-            if name_parts:
-                forward_info += f"👤 <b>Name</b>: {' '.join(name_parts)}\n\n"
-                forward_info += f"⚠️ <i>This is the user's ID, not the group ID. See 'Why can't I get the group ID' button below.</i>"
-        origin_type = getattr(message.forward_origin, 'type', 'unknown')
-        forward_info += f"\n\n<b>Origin Type</b>: {origin_type}"
-
-        # Try to extract any identifiable information from entities
-        # Check for mentions in the text (might help identify the source)
+def _extract_mention_info(message: types.Message) -> str:
+    """Extract @mentions and text_mention users from a message (unchanged API in 3.x)."""
+    mentioned_info = ""
+    text = message.text or message.caption
+    entities = message.entities or message.caption_entities
+    if entities and text:
         mentioned_entities = []
         text_mentioned_users = []
-
-        if hasattr(message, 'entities') and message.entities and hasattr(message, 'text') and message.text:
-            for entity in message.entities:
-                if entity.type == 'mention':
-                    mention_text = message.text[entity.offset:entity.offset + entity.length]
-                    mentioned_entities.append(mention_text)
-                elif entity.type == 'text_mention' and hasattr(entity, 'user'):
-                    user = entity.user
-                    user_text = message.text[entity.offset:entity.offset + entity.length]
-                    user_info = f"{user_text} (ID: {user.id})"
-                    text_mentioned_users.append(user_info)
-
-            # Add mentions to the message if we found any
-            if mentioned_entities:
-                forward_info += f"\n\n📢 <b>Mentioned</b>: {', '.join(mentioned_entities)}\n"
-                forward_info += f"⚠️ <i>This might be the group the message is from, but we can't confirm.</i>"
-
-            if text_mentioned_users:
-                forward_info += f"\n\n👤 <b>Text Mentioned Users</b>: {', '.join(text_mentioned_users)}\n"
-
-    # Add the help button to get the detailed explanation
-    await message.reply(forward_info, parse_mode="HTML", reply_markup=keyboard)
-
-async def simple_forward_handler(message: types.Message):
-    """Simple, reliable handler for all types of forwarded messages"""
-    # Log what we got for debugging
-    logger.info(f"=== FORWARD DEBUG INFO ===")
-    logger.info(f"Message ID: {message.message_id}")
-    logger.info(f"From User: {message.from_user.id} - {getattr(message.from_user, 'username', 'No username')}")
-
-    # Track what kind of forward this is
-    has_from_chat = message.forward_from_chat is not None
-    has_from_user = message.forward_from is not None
-    has_sender_name = getattr(message, 'forward_sender_name', None) is not None
-    has_origin = hasattr(message, 'forward_origin')
-
-    # Log the forward type
-    logger.info(f"Forward type: from_chat={has_from_chat}, from_user={has_from_user}, sender_name={has_sender_name}, has_origin={has_origin}")
-
-    # Start building the response message with the new format
-    source_info = ""  # For the source group/channel
-    user_info = ""    # For the user information
-    success_msg = ""  # For the success message
-    success = False
-
-    # Keyboard for when we need help button
-    help_keyboard = InlineKeyboardMarkup(row_width=1)
-    help_keyboard.add(
-        InlineKeyboardButton(text="❓ Why can't I get the group ID?", callback_data="group_id_help")
-    )
-
-    # SECTION 1: SOURCE GROUP/CHANNEL INFO
-
-    # Case 1: We have forward_from_chat - this is the most reliable case
-    if has_from_chat:
-        chat = message.forward_from_chat
-        chat_type = chat.type.upper()
-        source_info = f"SOURCE {chat_type}: ID <code>{chat.id}</code>\n"
-
-        if getattr(chat, 'title', None):
-            source_info += f"📢 Title: {chat.title}\n"
-
-        if getattr(chat, 'username', None):
-            source_info += f"👤 Username: @{chat.username}\n"
-            source_info += f"🔗 Link: https://t.me/{chat.username}\n"
-
-        # Add original message ID and link if available
-        if getattr(message, 'forward_from_message_id', None):
-            source_info += f"🔢 Message ID: {message.forward_from_message_id}\n"
-
-            if getattr(chat, 'username', None):
-                source_info += f"🔗 Message Link: https://t.me/{chat.username}/{message.forward_from_message_id}\n"
-
-        success = True
-
-    # Try origin.chat
-    elif has_origin and hasattr(message.forward_origin, 'chat') and message.forward_origin.chat:
-        chat = message.forward_origin.chat
-        chat_type = getattr(chat, 'type', 'GROUP').upper()
-        source_info = f"SOURCE {chat_type}: ID <code>{chat.id}</code>\n"
-
-        if getattr(chat, 'title', None):
-            source_info += f"📢 Title: {chat.title}\n"
-
-        if getattr(chat, 'username', None):
-            source_info += f"👤 Username: @{chat.username}\n"
-            source_info += f"🔗 Link: https://t.me/{chat.username}\n"
-
-        success = True
-
-    # Try origin.sender_chat
-    elif has_origin and hasattr(message.forward_origin, 'sender_chat') and message.forward_origin.sender_chat:
-        chat = message.forward_origin.sender_chat
-        chat_type = getattr(chat, 'type', 'GROUP').upper()
-        source_info = f"SOURCE {chat_type}: ID <code>{chat.id}</code>\n"
-
-        if getattr(chat, 'title', None):
-            source_info += f"📢 Title: {chat.title}\n"
-
-        if getattr(chat, 'username', None):
-            source_info += f"👤 Username: @{chat.username}\n"
-            source_info += f"🔗 Link: https://t.me/{chat.username}\n"
-
-        success = True
-
-    # No source group info available
-    else:
-        source_info = "SOURCE GROUP: unavailable\n"
-        if has_origin:
-            origin_type = getattr(message.forward_origin, 'type', 'unknown')
-            if origin_type not in ['user', 'unknown']:
-                source_info += f"Origin type: {origin_type}\n"
-            source_info += "⚠️ Unable to retrieve group ID due to privacy settings\n"
-
-    # SECTION 2: USER INFO
-
-    # Case for direct user forward
-    if has_from_user:
-        user = message.forward_from
-        user_info = f"Forwarded from User 🆔 <code>{user.id}</code>\n"
-
-        if getattr(user, 'username', None):
-            user_info += f"👤 Username: @{user.username}\n"
-            user_info += f"🔗 Link: https://t.me/{user.username}\n"
-
-        # Add name information 
-        name_parts = []
-        if getattr(user, 'first_name', None):
-            name_parts.append(user.first_name)
-        if getattr(user, 'last_name', None):
-            name_parts.append(user.last_name)
-
-        if name_parts:
-            user_info += f"👤 Name: {' '.join(name_parts)}\n"
-
-        # If we only have user info but no source, set success for user
-        if not success:
-            success = True
-
-    # Case for user info from forward_origin
-    elif has_origin and hasattr(message.forward_origin, 'sender_user') and message.forward_origin.sender_user:
-        user = message.forward_origin.sender_user
-        user_info = f"Forwarded from User 🆔 <code>{user.id}</code>\n"
-
-        if getattr(user, 'username', None):
-            user_info += f"👤 Username: @{user.username}\n"
-            user_info += f"🔗 Link: https://t.me/{user.username}\n"
-
-        # Add name information
-        name_parts = []
-        if getattr(user, 'first_name', None):
-            name_parts.append(user.first_name)
-        if getattr(user, 'last_name', None):
-            name_parts.append(user.last_name)
-
-        if name_parts:
-            user_info += f"👤 Name: {' '.join(name_parts)}\n"
-
-        # If we only have user info but no source, set success for user
-        if not success:
-            success = True
-
-    # Case for hidden user (only name)
-    elif has_sender_name:
-        user_info = f"Forwarded from User: {message.forward_sender_name}\n"
-        user_info += "⚠️ User ID not available due to privacy settings\n"
-
-    # SECTION 3: SUCCESS MESSAGE
-    if success:
-        if has_from_user or (has_origin and hasattr(message.forward_origin, 'sender_user')):
-            success_msg = "✅ SUCCESS: The user ID was successfully retrieved!"
-        else:
-            # For chat/channel/group
-            chat_type = "chat"
-            if has_from_chat:
-                chat_type = message.forward_from_chat.type
-            elif has_origin and hasattr(message.forward_origin, 'chat'):
-                chat_type = getattr(message.forward_origin.chat, 'type', 'chat') 
-            elif has_origin and hasattr(message.forward_origin, 'sender_chat'):
-                chat_type = getattr(message.forward_origin.sender_chat, 'type', 'chat')
-
-            success_msg = f"✅ SUCCESS: The {chat_type} ID was successfully retrieved!"
-    else:
-        success_msg = "❌ UNABLE TO GET ID\n"
-        success_msg += "Due to Telegram's API limitations, neither group ID nor user ID could be extracted."
-
-    # SECTION 4: COMBINE ALL PARTS AND SEND
-
-    # Check for mentions in the text (might help identify the source)
-    mentioned_info = ""
-    mentioned_entities = []
-    if hasattr(message, 'entities') and message.entities and hasattr(message, 'text') and message.text:
-        for entity in message.entities:
+        for entity in entities:
             if entity.type == 'mention':
-                mention_text = message.text[entity.offset:entity.offset + entity.length]
-                mentioned_entities.append(mention_text)
+                mentioned_entities.append(text[entity.offset:entity.offset + entity.length])
+            elif entity.type == 'text_mention' and entity.user:
+                user = entity.user
+                user_text = text[entity.offset:entity.offset + entity.length]
+                text_mentioned_users.append(f"{user_text} (ID: {user.id})")
 
         if mentioned_entities:
-            mentioned_info = f"Mentioned: {', '.join(mentioned_entities)}\n"
-            mentioned_info += "⚠️ This might be related to the source group\n"
+            mentioned_info += f"📢 <b>Mentioned</b>: {', '.join(mentioned_entities)}\n"
+            mentioned_info += "⚠️ <i>This might be related to the source group</i>\n"
 
-    # Combine all sections
-    forward_info = f"{source_info}\n{user_info}\n"
+        if text_mentioned_users:
+            mentioned_info += f"👤 <b>Text Mentioned Users</b>: {', '.join(text_mentioned_users)}\n"
+
+    return mentioned_info
+
+
+def _chat_block(chat: types.Chat) -> str:
+    """Format a source chat (channel/group) info block."""
+    chat_type = (chat.type or 'chat').upper()
+    block = f"SOURCE {chat_type}: ID <code>{chat.id}</code>\n"
+
+    if chat.title:
+        block += f"📢 Title: {chat.title}\n"
+
+    if chat.username:
+        block += f"👤 Username: @{chat.username}\n"
+        block += f"🔗 Link: https://t.me/{chat.username}\n"
+
+    return block
+
+
+def _success_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
+            InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
+        ],
+    ])
+
+
+def _help_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="❓ Why can't I get the ID?", callback_data="group_id_help"),
+            InlineKeyboardButton(text="📚 Help", callback_data="show_help"),
+        ],
+    ])
+
+
+@router.message(F.forward_origin)
+async def forward_origin_handler(message: types.Message):
+    """Single handler for all forwarded messages (Bot API 7.0+ forward_origin)."""
+    origin = message.forward_origin
+    logger.info(f"Forward detected, origin type: {origin.type} (message_id={message.message_id})")
+
+    mentioned_info = _extract_mention_info(message)
+    body = ""
+    success = True
+
+    if isinstance(origin, types.MessageOriginChannel):
+        # Forward from a channel: full chat info + original message ID/link
+        chat = origin.chat
+        body = _chat_block(chat)
+        body += f"🔢 Message ID: {origin.message_id}\n"
+        if chat.username:
+            body += f"🔗 Message Link: https://t.me/{chat.username}/{origin.message_id}\n"
+        if origin.author_signature:
+            body += f"✍️ Author signature: {origin.author_signature}\n"
+        success_msg = f"✅ SUCCESS: The {chat.type} ID was successfully retrieved!"
+
+    elif isinstance(origin, types.MessageOriginChat):
+        # Anonymous admin / group-as-sender forward
+        chat = origin.sender_chat
+        body = _chat_block(chat)
+        success_msg = f"✅ SUCCESS: The {chat.type} ID was successfully retrieved!"
+
+    elif isinstance(origin, types.MessageOriginUser):
+        # Forward from a user (Telegram shows the user, not any source group)
+        user = origin.sender_user
+        body = f"Forwarded from User 🆔 <code>{user.id}</code>\n"
+
+        if user.username:
+            body += f"👤 Username: @{user.username}\n"
+            body += f"🔗 Link: https://t.me/{user.username}\n"
+
+        name_parts = [p for p in (user.first_name, user.last_name) if p]
+        if name_parts:
+            body += f"👤 Name: {' '.join(name_parts)}\n"
+
+        body += (
+            "⚠️ <i>This is the user's ID, not a group ID. If this message was originally "
+            "posted in a group, Telegram hides the group behind the user for privacy reasons "
+            "(see /forward_help).</i>\n"
+        )
+        success_msg = "✅ SUCCESS: The user ID was successfully retrieved!"
+
+    elif isinstance(origin, types.MessageOriginHiddenUser):
+        # Privacy-protected user forward: only a name is available
+        body = f"Forwarded from User: {origin.sender_user_name}\n"
+        body += "⚠️ User ID not available — this user hides their account in forwarded messages (privacy setting).\n"
+        success_msg = "❌ UNABLE TO GET ID\nDue to the sender's privacy settings, no ID could be extracted."
+        success = False
+
+    else:
+        # Unknown/future origin type — degrade gracefully
+        body = f"Origin type: {getattr(origin, 'type', 'unknown')}\n"
+        body += "⚠️ Unable to retrieve source ID due to privacy settings\n"
+        success_msg = "❌ UNABLE TO GET ID\nDue to Telegram's API limitations, neither group ID nor user ID could be extracted."
+        success = False
+
+    forward_info = f"{body}\n"
     if mentioned_info:
         forward_info += f"{mentioned_info}\n"
     forward_info += success_msg
 
-    # Use the appropriate keyboard
-    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard = _success_keyboard() if success else _help_keyboard()
+    await message.reply(forward_info, parse_mode="HTML", reply_markup=keyboard)
 
-    if success:
-        keyboard.add(
-            InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
-            InlineKeyboardButton(text="❓ Help", callback_data="show_help")
-        )
-        await message.reply(forward_info, parse_mode="HTML", reply_markup=keyboard)
-    else:
-        keyboard.add(
-            InlineKeyboardButton(text="❓ Why can't I get the ID?", callback_data="group_id_help"),
-            InlineKeyboardButton(text="📚 Help", callback_data="show_help")
-        )
-        await message.reply(forward_info, parse_mode="HTML", reply_markup=keyboard)
 
+# ---------------------------------------------------------------------------
+# General text handler (@mention full-info flow)
+# ---------------------------------------------------------------------------
+
+@router.message(F.text)
 async def message_handler(message: types.Message):
     """General message handler"""
     chat_id = message.chat.id
@@ -859,11 +642,6 @@ async def message_handler(message: types.Message):
         if message.from_user.is_bot:
             # Don't respond to other bots
             return
-
-        # Check if this is the first message in a group chat (using simpler is_in_group flag)
-        if getattr(message, 'is_in_group', False):
-            logger.info(f"Group chat message detected: {chat_id}")
-            # No automatic welcome now - better to use explicit commands
 
     # Check if the bot is mentioned in the message
     bot_info = await message.bot.get_me()
@@ -880,7 +658,6 @@ async def message_handler(message: types.Message):
 
             # Add forum topic detection if this is a forum
             if chat_info.get('is_forum'):
-                from bot.utils import detect_topic_from_message
                 topic_info = detect_topic_from_message(message)
 
                 if topic_info.get('topic_id'):
@@ -890,11 +667,12 @@ async def message_handler(message: types.Message):
                     formatted_info += f"\n\n💡 <b>Tip</b>: Use /topics for forum-specific details"
 
             # Create inline keyboard with command buttons
-            keyboard = InlineKeyboardMarkup(row_width=2)
-            keyboard.add(
-                InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
-                InlineKeyboardButton(text="❓ Help", callback_data="show_help")
-            )
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
+                    InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
+                ],
+            ])
 
             await message.reply(
                 f"🤖 <b>Chat Information</b>\n\n{formatted_info}",
@@ -906,11 +684,12 @@ async def message_handler(message: types.Message):
             logger.error(f"Error getting full chat info on mention: {e}")
 
             # Fallback to basic info if there's an error
-            keyboard = InlineKeyboardMarkup(row_width=2)
-            keyboard.add(
-                InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
-                InlineKeyboardButton(text="❓ Help", callback_data="show_help")
-            )
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
+                    InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
+                ],
+            ])
 
             await message.reply(
                 f"🤖 <b>Chat Info</b>:\n"
@@ -921,6 +700,12 @@ async def message_handler(message: types.Message):
                 reply_markup=keyboard
             )
 
+
+# ---------------------------------------------------------------------------
+# Inline button callbacks — every emitted callback_data MUST route here
+# ---------------------------------------------------------------------------
+
+@router.callback_query(F.data.in_(ALL_CALLBACKS))
 async def button_callback(callback_query: types.CallbackQuery):
     """Handler for inline button callbacks"""
     chat_id = callback_query.message.chat.id
@@ -950,11 +735,10 @@ async def button_callback(callback_query: types.CallbackQuery):
 
         elif action == "get_id":
             # Create back button
-            keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
+            keyboard = _back_keyboard()
 
             await callback_query.message.edit_text(
-                f"🆔 <b>Chat ID</b>: <code>{chat_id}</code>", 
+                f"🆔 <b>Chat ID</b>: <code>{chat_id}</code>",
                 parse_mode="HTML",
                 reply_markup=keyboard
             )
@@ -964,20 +748,19 @@ async def button_callback(callback_query: types.CallbackQuery):
             formatted_info = format_chat_info(chat_info)
 
             # Create back button
-            keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
+            keyboard = _back_keyboard()
 
             # If message is too long, send a new message instead of editing
             if len(formatted_info) > 4000:
                 await callback_query.message.reply(
-                    formatted_info, 
+                    formatted_info,
                     parse_mode="HTML",
                     reply_markup=keyboard
                 )
                 await callback_query.answer("Chat information sent in a new message")
             else:
                 await callback_query.message.edit_text(
-                    formatted_info, 
+                    formatted_info,
                     parse_mode="HTML",
                     reply_markup=keyboard
                 )
@@ -991,14 +774,10 @@ async def button_callback(callback_query: types.CallbackQuery):
                 "channel": "📢 This is a channel (broadcast)"
             }.get(chat_type, f"Unknown chat type: {chat_type}")
 
-            # Create back button
-            keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
-
             await callback_query.message.edit_text(
-                f"<b>Chat Type</b>: {chat_type}\n{type_description}", 
+                f"<b>Chat Type</b>: {chat_type}\n{type_description}",
                 parse_mode="HTML",
-                reply_markup=keyboard
+                reply_markup=_back_keyboard()
             )
 
         elif action == "get_members":
@@ -1006,16 +785,12 @@ async def button_callback(callback_query: types.CallbackQuery):
                 await callback_query.answer("This feature only works in groups and channels")
                 return
 
-            # Create back button
-            keyboard = InlineKeyboardMarkup()
-            keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
-
             # Get member count via Bot API (works for groups, supergroups and channels)
             member_count = await callback_query.bot.get_chat_member_count(chat_id)
             await callback_query.message.edit_text(
-                f"👥 <b>Member count</b>: {member_count}", 
+                f"👥 <b>Member count</b>: {member_count}",
                 parse_mode="HTML",
-                reply_markup=keyboard
+                reply_markup=_back_keyboard()
             )
 
         elif action == "get_admins":
@@ -1031,36 +806,27 @@ async def button_callback(callback_query: types.CallbackQuery):
                 admins_info = await get_chat_admins(callback_query.bot, chat_id)
                 formatted_info = format_admin_info(admins_info)
 
-                # Create back button - always use show_help which handles forum detection
-                keyboard = InlineKeyboardMarkup()
-                keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
-
                 # Send the formatted admin info
                 await callback_query.message.edit_text(
                     formatted_info,
                     parse_mode="HTML",
-                    reply_markup=keyboard
+                    reply_markup=_back_keyboard()
                 )
             except Exception as e:
                 logger.error(f"Error getting admin information via callback: {e}")
                 logger.exception("Full exception details:")
 
-                # Create back button
-                keyboard = InlineKeyboardMarkup()
-                keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
-
                 await callback_query.message.edit_text(
                     f"❌ Error getting administrator information: {str(e)}",
                     parse_mode="HTML",
-                    reply_markup=keyboard
+                    reply_markup=_back_keyboard()
                 )
 
         elif action == "get_topics":
             try:
                 # Check if this is a forum
                 chat = await callback_query.bot.get_chat(chat_id)
-                if hasattr(chat, 'is_forum') and chat.is_forum:
-                    from bot.utils import detect_topic_from_message
+                if getattr(chat, 'is_forum', False):
                     topic_info = detect_topic_from_message(callback_query.message)
 
                     response = f"📝 <b>Forum Topics Information</b>\n\n"
@@ -1081,63 +847,68 @@ async def button_callback(callback_query: types.CallbackQuery):
                     response = f"📝 <b>Forum Topics</b>\n\n"
                     response += f"This chat is not a forum supergroup. Forum topics are only available in forum-enabled supergroups.\n\n"
                     response += f"To use forum features:\n"
-                    response += f"1. Create or convert a supergroup to a forum\n" 
+                    response += f"1. Create or convert a supergroup to a forum\n"
                     response += f"2. Enable 'Topics' in the group settings\n"
                     response += f"3. Add this bot to the forum group"
-
-                # Create back button
-                keyboard = InlineKeyboardMarkup(row_width=1)
-                keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
 
                 await callback_query.message.edit_text(
                     response,
                     parse_mode="HTML",
-                    reply_markup=keyboard
+                    reply_markup=_back_keyboard()
                 )
 
             except Exception as e:
                 logger.error(f"Error getting topics info: {e}")
 
-                keyboard = InlineKeyboardMarkup()
-                keyboard.add(InlineKeyboardButton(text="« Back", callback_data="show_help"))
-
                 await callback_query.message.edit_text(
                     f"❌ Error getting topic information: {str(e)}",
-                    reply_markup=keyboard
+                    parse_mode="HTML",
+                    reply_markup=_back_keyboard()
                 )
 
         elif action == "show_help":
             # First, immediately answer the callback to remove loading state
             try:
                 await callback_query.answer()
-            except:
+            except Exception:
                 pass
 
-            # Recreate the help keyboard  
-            keyboard = InlineKeyboardMarkup(row_width=2)
-
             # Use simpler forum detection from message object instead of async call
-            is_forum = hasattr(callback_query.message.chat, 'is_forum') and callback_query.message.chat.is_forum
+            is_forum = getattr(callback_query.message.chat, 'is_forum', False)
 
             if is_forum:
-                keyboard.add(
-                    InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
-                    InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                    InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-                    InlineKeyboardButton(text="📝 Topics", callback_data="get_topics"),
-                    InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
-                    InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help")
-                )
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                        InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
+                    ],
+                    [
+                        InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                        InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+                    ],
+                    [
+                        InlineKeyboardButton(text="📝 Topics", callback_data="get_topics"),
+                        InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
+                    ],
+                    [
+                        InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help"),
+                    ],
+                ])
             else:
-                keyboard.add(
-                    InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
-                    InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                    InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-                    InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
-                    InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help")
-                )
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
+                        InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
+                    ],
+                    [
+                        InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
+                        InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
+                    ],
+                    [
+                        InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
+                        InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help"),
+                    ],
+                ])
 
             help_text = (
                 "🔍 <b>Available Commands</b>:\n\n"
@@ -1175,3 +946,10 @@ async def button_callback(callback_query: types.CallbackQuery):
     except Exception as e:
         logger.error(f"Error handling button callback: {e}")
         await callback_query.answer(f"Error: {str(e)[:200]}")  # Limit error message length
+
+
+def _back_keyboard() -> InlineKeyboardMarkup:
+    """Single « Back button keyboard (routes to show_help)."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="« Back", callback_data="show_help")],
+    ])

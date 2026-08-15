@@ -4,7 +4,7 @@ import logging
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
-from aiogram import Bot, types
+from aiogram import types
 
 import bot as bot_pkg
 
@@ -54,15 +54,13 @@ async def telegram_webhook(request: Request):
 
     try:
         data = await request.json()
-        update = types.Update(**data)
+        update = types.Update.model_validate(data)
     except Exception as e:
         logger.error(f"Failed to parse webhook update: {e}")
         raise HTTPException(status_code=400, detail="Invalid update payload")
 
-    # aiogram 2.x resolves `.bot` on objects from context; process_update
-    # does not set it itself (the built-in webhook handler normally does)
-    Bot.set_current(bot)
-    await dp.process_update(update)
+    # feed_update sets the bot context (replaces the aiogram 2.x global-context hack)
+    await dp.feed_update(bot=bot, update=update)
     return {"ok": True}
 
 
@@ -75,8 +73,8 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     logger.info("Webhook deleted, starting polling...")
 
-    # Start polling
-    await dp.start_polling()
+    # Start polling (bot arg required in aiogram 3.x)
+    await dp.start_polling(bot)
 
 
 if __name__ == '__main__':
