@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from aiogram import Bot
-from aiogram.exceptions import TelegramBadRequest, TelegramForbidden
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
 logger = logging.getLogger(__name__)
 
@@ -90,8 +90,8 @@ async def get_chat_info(bot: Bot, chat_id):
         logger.error(f"Error getting chat info: {e}")
         raise
 
-    except TelegramForbidden as e:
-        # aiogram 3.x raises TelegramForbidden (separate class) for kicked/blocked chats
+    except TelegramForbiddenError as e:
+        # aiogram 3.x raises TelegramForbiddenError for kicked/blocked chats
         logger.error(f"Bot is not authorized to access chat {chat_id}: {e}")
         raise Exception(f"Bot is not authorized to access this chat")
 
