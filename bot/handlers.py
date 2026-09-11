@@ -535,6 +535,10 @@ async def forward_origin_handler(message: types.Message):
     origin = message.forward_origin
     logger.info(f"Forward detected, origin type: {origin.type} (message_id={message.message_id})")
 
+    if message.chat.type != 'private':
+        # Silently ignore forwards in groups/channels — analysis is a private-chat feature
+        return
+
     mentioned_info = _extract_mention_info(message)
     body = ""
     success = True
