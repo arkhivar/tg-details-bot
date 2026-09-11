@@ -1,7 +1,8 @@
 import logging
 from aiogram import F, Router, types
 from aiogram.filters import Command, CommandStart
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InputRichMessage, ReplyParameters
+from aiogram.exceptions import TelegramBadRequest
 from .utils import get_chat_info, format_chat_info, get_chat_admins, format_admin_info, detect_topic_from_message
 
 logger = logging.getLogger(__name__)
@@ -9,6 +10,49 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 ALL_CALLBACKS = {"get_id", "get_info", "get_type", "get_members", "get_admins", "get_topics", "group_id_help", "show_help"}
+
+
+def _rich_rows(rows):
+    """rows: list of rows; each row is a list of (text, callback_data) or (text, callback_data, style) tuples."""
+    parts = []
+    for row in rows:
+        buttons = []
+        for btn in row:
+            text, data = btn[0], btn[1]
+            style = f' style="{btn[2]}"' if len(btn) > 2 else ""
+            buttons.append(f'<tg-button type="callback_data"{style} data="{data}">{text}</tg-button>')
+        parts.append('<tg-button-row align="center">' + "".join(buttons) + "</tg-button-row>")
+    return "\n" + "\n".join(parts)
+
+
+async def reply_rich(message, html_text, rows=None):
+    """Reply with a rich message: html_text plus optional in-bubble button rows."""
+    html = (html_text + _rich_rows(rows)) if rows else html_text
+    return await message.bot.send_rich_message(
+        chat_id=message.chat.id,
+        rich_message=InputRichMessage(html=html),
+        reply_parameters=ReplyParameters(message_id=message.message_id),
+        message_thread_id=message.message_thread_id if getattr(message, "is_topic_message", None) else None,
+    )
+
+
+async def edit_rich(message, html_text, rows=None):
+    """Edit a message's content in place (text + in-bubble buttons).
+
+    Falls back to a new rich reply when the message can't be edited
+    (e.g. a legacy plain-text menu Telegram refuses to convert)."""
+    html = (html_text + _rich_rows(rows)) if rows else html_text
+    try:
+        return await message.bot.edit_message_text(
+            rich_message=InputRichMessage(html=html),
+            chat_id=message.chat.id,
+            message_id=message.message_id,
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e).lower():
+            return None
+        logger.warning(f"edit_rich failed ({e}); falling back to a new rich reply")
+        return await reply_rich(message, html_text, rows)
 
 
 def register_handlers(dp):
@@ -33,18 +77,13 @@ async def start_command(message: types.Message):
     # Different response based on chat type
     if chat_type == 'private':
         # In private chats, show introduction
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
-            ],
-            [
-                InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-            ],
-        ])
+        rows = [
+            [("📋 Get Chat ID", "get_id", "primary"), ("ℹ️ Chat Info", "get_info")],
+            [("📊 Chat Type", "get_type"), ("👥 Members", "get_members")],
+        ]
 
-        await message.reply(
+        await reply_rich(
+            message,
             "👋 Hello! I'm a Telegram Info Bot.\n\n"
             "I can help you get technical information about chats. "
             "This is useful for setting up other bots.\n\n"
@@ -52,8 +91,7 @@ async def start_command(message: types.Message):
             "Forward any message from a group/channel to me to get its chat ID.\n"
             "Forward a message with @username or text mentions to see detected users and their IDs.\n"
             "Use /help to see all available commands.",
-            parse_mode="HTML",
-            reply_markup=keyboard
+            rows
         )
     else:
         # In groups/channels, show group info
@@ -62,63 +100,44 @@ async def start_command(message: types.Message):
             chat_info = await get_chat_info(message.bot, message.chat.id)
             formatted_info = format_chat_info(chat_info)
 
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                ],
-                [
-                    InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-                    InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
-                ],
-            ])
+            rows = [
+                [("📋 Get Chat ID", "get_id", "primary"), ("📊 Chat Type", "get_type")],
+                [("👥 Members", "get_members"), ("❓ Help", "show_help")],
+            ]
 
-            await message.reply(
+            await reply_rich(
+                message,
                 "👋 <b>Hello!</b> I'm a Telegram Info Bot.\n\n"
                 "Here's the information about this chat:\n\n" + formatted_info,
-                parse_mode="HTML",
-                reply_markup=keyboard
+                rows
             )
         except Exception as e:
             logger.error(f"Error sending start command response in group: {e}")
             logger.exception("Full exception details:")
 
             # Fallback to simpler message
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
-                ],
-            ])
+            rows = [
+                [("📋 Get Chat ID", "get_id", "primary"), ("❓ Help", "show_help")],
+            ]
 
-            await message.reply(
+            await reply_rich(
+                message,
                 f"👋 <b>Hello!</b> I'm a Telegram Info Bot.\n\n"
                 f"<b>Chat ID:</b> <code>{message.chat.id}</code>\n"
                 f"<b>Chat Type:</b> {message.chat.type}\n\n"
                 f"Use /info for more details or /help to see all commands.",
-                parse_mode="HTML",
-                reply_markup=keyboard
+                rows
             )
 
 
 @router.message(Command("help"))
 async def help_command(message: types.Message):
     """Handler for /help command"""
-    # Create inline keyboard with command buttons
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-            InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
-        ],
-        [
-            InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-            InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-        ],
-        [
-            InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
-            InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help"),
-        ],
-    ])
+    rows = [
+        [("📋 Get Chat ID", "get_id", "primary"), ("ℹ️ Chat Info", "get_info")],
+        [("📊 Chat Type", "get_type"), ("👥 Members", "get_members")],
+        [("👮‍♂️ Admins", "get_admins"), ("❓ Group ID Help", "group_id_help")],
+    ]
 
     help_text = (
         "🔍 <b>Available Commands</b>:\n\n"
@@ -140,7 +159,7 @@ async def help_command(message: types.Message):
         "❓ <b>Trouble getting group IDs?</b> Use /forward_help for a detailed explanation.\n\n"
         "<i>Note: Some information may be limited based on my permissions and the chat type.</i>"
     )
-    await message.reply(help_text, parse_mode="HTML", reply_markup=keyboard)
+    await reply_rich(message, help_text, rows)
 
 
 @router.message(Command("id"))
@@ -231,18 +250,12 @@ async def topics_command(message: types.Message):
             response += f"To get topic IDs from other topics, send this command from those topics.\n\n"
             response += f"🔧 <b>For Developers</b>: Use the topic ID as the message_thread_id when sending messages to specific topics via the Bot API."
 
-            # Create keyboard
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="📋 Chat ID", callback_data="get_id"),
-                    InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
-                ],
-                [
-                    InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
-                ],
-            ])
+            rows = [
+                [("📋 Chat ID", "get_id", "primary"), ("ℹ️ More Info", "get_info")],
+                [("❓ Help", "show_help")],
+            ]
 
-            await message.reply(response, parse_mode="HTML", reply_markup=keyboard)
+            await reply_rich(message, response, rows)
         else:
             await message.reply(
                 "📝 <b>Forum Topics</b>\n\n"
@@ -267,26 +280,19 @@ async def hello_command(message: types.Message):
         chat_id = message.chat.id
         chat_type = message.chat.type
 
-        # Create keyboard with info buttons
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
-            ],
-            [
-                InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
-            ],
-        ])
+        rows = [
+            [("📋 Get Chat ID", "get_id", "primary"), ("ℹ️ Chat Info", "get_info")],
+            [("📊 Chat Type", "get_type"), ("❓ Help", "show_help")],
+        ]
 
         # Start with immediate basic response
-        await message.reply(
+        await reply_rich(
+            message,
             f"👋 <b>Hello from tgDetailsBot!</b>\n\n"
             f"🆔 <b>Chat ID</b>: <code>{chat_id}</code>\n"
             f"📋 <b>Type</b>: {chat_type}\n\n"
             f"Click a button below or use /info for more details.",
-            parse_mode="HTML",
-            reply_markup=keyboard
+            rows
         )
 
         # Log chat interaction for stateless operation
@@ -322,17 +328,9 @@ async def admins_command(message: types.Message):
         admins_info = await get_chat_admins(message.bot, chat_id)
         formatted_info = format_admin_info(admins_info)
 
-        # Create back button - always use show_help which handles forum detection
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="« Back", callback_data="show_help")],
-        ])
-
-        # Send the formatted admin info
-        await processing_msg.edit_text(
-            formatted_info,
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
+        # Turn the processing placeholder into the result
+        # (« Back routes to show_help, which handles forum detection)
+        await edit_rich(processing_msg, formatted_info, _back_rows())
 
     except Exception as e:
         logger.error(f"Error getting admin information: {e}")
@@ -393,18 +391,15 @@ async def new_chat_members(message: types.Message):
             # Bot was added to a new chat, send info immediately
             try:
                 # First, send an immediate welcome message
-                initial_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [
-                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                        InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
-                    ],
-                ])
+                initial_rows = [
+                    [("📋 Get Chat ID", "get_id", "primary"), ("❓ Help", "show_help")],
+                ]
 
-                welcome_message = await message.reply(
+                welcome_message = await reply_rich(
+                    message,
                     "👋 <b>Hello everyone!</b> I'm a bot that provides technical information about Telegram chats.\n\n"
                     "Getting chat details... please wait...",
-                    parse_mode="HTML",
-                    reply_markup=initial_keyboard
+                    initial_rows
                 )
 
                 # Then get the detailed chat info
@@ -421,42 +416,28 @@ async def new_chat_members(message: types.Message):
 
                 formatted_info = format_chat_info(chat_info) + topic_info_text
 
-                # Create detailed inline keyboard with command buttons
+                # Create detailed button rows with command buttons
                 # Add different buttons based on whether it's a forum
                 if chat_info.get('is_forum'):
-                    detailed_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [
-                            InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                            InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                        ],
-                        [
-                            InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-                            InlineKeyboardButton(text="📝 Topics", callback_data="get_topics"),
-                        ],
-                        [
-                            InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
-                        ],
-                    ])
+                    detailed_rows = [
+                        [("📋 Get Chat ID", "get_id", "primary"), ("📊 Chat Type", "get_type")],
+                        [("👥 Members", "get_members"), ("📝 Topics", "get_topics")],
+                        [("❓ Help", "show_help")],
+                    ]
                 else:
-                    detailed_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [
-                            InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                            InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                        ],
-                        [
-                            InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-                            InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
-                        ],
-                    ])
+                    detailed_rows = [
+                        [("📋 Get Chat ID", "get_id", "primary"), ("📊 Chat Type", "get_type")],
+                        [("👥 Members", "get_members"), ("❓ Help", "show_help")],
+                    ]
 
-                # Update the welcome message with detailed info
-                await welcome_message.edit_text(
+                # Turn the welcome placeholder into the detailed message
+                await edit_rich(
+                    welcome_message,
                     "👋 <b>Thanks for adding me!</b>\n\n"
                     "I can help you get technical information about this chat. "
                     "This is useful for setting up other bots.\n\n"
                     "<b>Chat Information:</b>\n\n" + formatted_info,
-                    parse_mode="HTML",
-                    reply_markup=detailed_keyboard
+                    detailed_rows
                 )
 
                 logger.info(f"Successfully sent welcome message to chat: {message.chat.id}")
@@ -467,21 +448,18 @@ async def new_chat_members(message: types.Message):
 
                 # If there was an error getting detailed info, send a simpler message
                 try:
-                    # Create simple keyboard with fewer options
-                    simple_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [
-                            InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                            InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
-                        ],
-                    ])
+                    # Simple rows with fewer options
+                    simple_rows = [
+                        [("📋 Get Chat ID", "get_id", "primary"), ("❓ Help", "show_help")],
+                    ]
 
-                    await message.reply(
+                    await reply_rich(
+                        message,
                         "👋 <b>Thanks for adding me!</b>\n\n"
                         f"<b>Chat ID:</b> <code>{message.chat.id}</code>\n"
                         f"<b>Chat Type:</b> {message.chat.type}\n\n"
                         "Use /info to see more details or /help for all commands.",
-                        parse_mode="HTML",
-                        reply_markup=simple_keyboard
+                        simple_rows
                     )
                 except Exception as inner_e:
                     logger.error(f"Failed to send fallback welcome message: {inner_e}")
@@ -539,22 +517,16 @@ def _chat_block(chat: types.Chat) -> str:
     return block
 
 
-def _success_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
-            InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
-        ],
-    ])
+def _success_rows():
+    return [
+        [("ℹ️ More Info", "get_info", "primary"), ("❓ Help", "show_help")],
+    ]
 
 
-def _help_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="❓ Why can't I get the ID?", callback_data="group_id_help"),
-            InlineKeyboardButton(text="📚 Help", callback_data="show_help"),
-        ],
-    ])
+def _help_rows():
+    return [
+        [("❓ Why can't I get the ID?", "group_id_help", "primary"), ("📚 Help", "show_help")],
+    ]
 
 
 @router.message(F.forward_origin)
@@ -623,8 +595,8 @@ async def forward_origin_handler(message: types.Message):
         forward_info += f"{mentioned_info}\n"
     forward_info += success_msg
 
-    keyboard = _success_keyboard() if success else _help_keyboard()
-    await message.reply(forward_info, parse_mode="HTML", reply_markup=keyboard)
+    rows = _success_rows() if success else _help_rows()
+    await reply_rich(message, forward_info, rows)
 
 
 # ---------------------------------------------------------------------------
@@ -666,38 +638,31 @@ async def message_handler(message: types.Message):
                 else:
                     formatted_info += f"\n\n💡 <b>Tip</b>: Use /topics for forum-specific details"
 
-            # Create inline keyboard with command buttons
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
-                    InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
-                ],
-            ])
+            rows = [
+                [("👮‍♂️ Admins", "get_admins", "primary"), ("❓ Help", "show_help")],
+            ]
 
-            await message.reply(
+            await reply_rich(
+                message,
                 f"🤖 <b>Chat Information</b>\n\n{formatted_info}",
-                parse_mode="HTML",
-                reply_markup=keyboard
+                rows
             )
 
         except Exception as e:
             logger.error(f"Error getting full chat info on mention: {e}")
 
             # Fallback to basic info if there's an error
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="ℹ️ More Info", callback_data="get_info"),
-                    InlineKeyboardButton(text="❓ Help", callback_data="show_help"),
-                ],
-            ])
+            rows = [
+                [("ℹ️ More Info", "get_info", "primary"), ("❓ Help", "show_help")],
+            ]
 
-            await message.reply(
+            await reply_rich(
+                message,
                 f"🤖 <b>Chat Info</b>:\n"
                 f"🆔 <b>Chat ID</b>: <code>{chat_id}</code>\n"
                 f"📋 <b>Type</b>: {chat_type}\n\n"
                 f"Use /info for more details.",
-                parse_mode="HTML",
-                reply_markup=keyboard
+                rows
             )
 
 
@@ -734,36 +699,22 @@ async def button_callback(callback_query: types.CallbackQuery):
             await callback_query.answer("Technical explanation provided")
 
         elif action == "get_id":
-            # Create back button
-            keyboard = _back_keyboard()
-
-            await callback_query.message.edit_text(
+            await edit_rich(
+                callback_query.message,
                 f"🆔 <b>Chat ID</b>: <code>{chat_id}</code>",
-                parse_mode="HTML",
-                reply_markup=keyboard
+                _back_rows()
             )
 
         elif action == "get_info":
             chat_info = await get_chat_info(callback_query.bot, chat_id)
             formatted_info = format_chat_info(chat_info)
 
-            # Create back button
-            keyboard = _back_keyboard()
-
             # If message is too long, send a new message instead of editing
             if len(formatted_info) > 4000:
-                await callback_query.message.reply(
-                    formatted_info,
-                    parse_mode="HTML",
-                    reply_markup=keyboard
-                )
+                await reply_rich(callback_query.message, formatted_info, _back_rows())
                 await callback_query.answer("Chat information sent in a new message")
             else:
-                await callback_query.message.edit_text(
-                    formatted_info,
-                    parse_mode="HTML",
-                    reply_markup=keyboard
-                )
+                await edit_rich(callback_query.message, formatted_info, _back_rows())
 
         elif action == "get_type":
             chat_type = callback_query.message.chat.type
@@ -774,10 +725,10 @@ async def button_callback(callback_query: types.CallbackQuery):
                 "channel": "📢 This is a channel (broadcast)"
             }.get(chat_type, f"Unknown chat type: {chat_type}")
 
-            await callback_query.message.edit_text(
+            await edit_rich(
+                callback_query.message,
                 f"<b>Chat Type</b>: {chat_type}\n{type_description}",
-                parse_mode="HTML",
-                reply_markup=_back_keyboard()
+                _back_rows()
             )
 
         elif action == "get_members":
@@ -787,10 +738,10 @@ async def button_callback(callback_query: types.CallbackQuery):
 
             # Get member count via Bot API (works for groups, supergroups and channels)
             member_count = await callback_query.bot.get_chat_member_count(chat_id)
-            await callback_query.message.edit_text(
+            await edit_rich(
+                callback_query.message,
                 f"👥 <b>Member count</b>: {member_count}",
-                parse_mode="HTML",
-                reply_markup=_back_keyboard()
+                _back_rows()
             )
 
         elif action == "get_admins":
@@ -807,19 +758,15 @@ async def button_callback(callback_query: types.CallbackQuery):
                 formatted_info = format_admin_info(admins_info)
 
                 # Send the formatted admin info
-                await callback_query.message.edit_text(
-                    formatted_info,
-                    parse_mode="HTML",
-                    reply_markup=_back_keyboard()
-                )
+                await edit_rich(callback_query.message, formatted_info, _back_rows())
             except Exception as e:
                 logger.error(f"Error getting admin information via callback: {e}")
                 logger.exception("Full exception details:")
 
-                await callback_query.message.edit_text(
+                await edit_rich(
+                    callback_query.message,
                     f"❌ Error getting administrator information: {str(e)}",
-                    parse_mode="HTML",
-                    reply_markup=_back_keyboard()
+                    _back_rows()
                 )
 
         elif action == "get_topics":
@@ -851,19 +798,15 @@ async def button_callback(callback_query: types.CallbackQuery):
                     response += f"2. Enable 'Topics' in the group settings\n"
                     response += f"3. Add this bot to the forum group"
 
-                await callback_query.message.edit_text(
-                    response,
-                    parse_mode="HTML",
-                    reply_markup=_back_keyboard()
-                )
+                await edit_rich(callback_query.message, response, _back_rows())
 
             except Exception as e:
                 logger.error(f"Error getting topics info: {e}")
 
-                await callback_query.message.edit_text(
+                await edit_rich(
+                    callback_query.message,
                     f"❌ Error getting topic information: {str(e)}",
-                    parse_mode="HTML",
-                    reply_markup=_back_keyboard()
+                    _back_rows()
                 )
 
         elif action == "show_help":
@@ -877,38 +820,18 @@ async def button_callback(callback_query: types.CallbackQuery):
             is_forum = getattr(callback_query.message.chat, 'is_forum', False)
 
             if is_forum:
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [
-                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                        InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
-                    ],
-                    [
-                        InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                        InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-                    ],
-                    [
-                        InlineKeyboardButton(text="📝 Topics", callback_data="get_topics"),
-                        InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
-                    ],
-                    [
-                        InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help"),
-                    ],
-                ])
+                rows = [
+                    [("📋 Get Chat ID", "get_id", "primary"), ("ℹ️ Chat Info", "get_info")],
+                    [("📊 Chat Type", "get_type"), ("👥 Members", "get_members")],
+                    [("📝 Topics", "get_topics"), ("👮‍♂️ Admins", "get_admins")],
+                    [("❓ Group ID Help", "group_id_help")],
+                ]
             else:
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [
-                        InlineKeyboardButton(text="📋 Get Chat ID", callback_data="get_id"),
-                        InlineKeyboardButton(text="ℹ️ Chat Info", callback_data="get_info"),
-                    ],
-                    [
-                        InlineKeyboardButton(text="📊 Chat Type", callback_data="get_type"),
-                        InlineKeyboardButton(text="👥 Members", callback_data="get_members"),
-                    ],
-                    [
-                        InlineKeyboardButton(text="👮‍♂️ Admins", callback_data="get_admins"),
-                        InlineKeyboardButton(text="❓ Group ID Help", callback_data="group_id_help"),
-                    ],
-                ])
+                rows = [
+                    [("📋 Get Chat ID", "get_id", "primary"), ("ℹ️ Chat Info", "get_info")],
+                    [("📊 Chat Type", "get_type"), ("👥 Members", "get_members")],
+                    [("👮‍♂️ Admins", "get_admins"), ("❓ Group ID Help", "group_id_help")],
+                ]
 
             help_text = (
                 "🔍 <b>Available Commands</b>:\n\n"
@@ -928,15 +851,11 @@ async def button_callback(callback_query: types.CallbackQuery):
                 "<i>Note: Some information may be limited based on my permissions and the chat type.</i>"
             )
 
-            # Edit the message - wrap in try/except
+            # Edit the menu in place - wrap in try/except
             try:
-                await callback_query.message.edit_text(
-                    help_text,
-                    parse_mode="HTML",
-                    reply_markup=keyboard
-                )
+                await edit_rich(callback_query.message, help_text, rows)
             except Exception as e:
-                logger.error(f"Error editing message in show_help: {e}")
+                logger.error(f"Error editing rich message in show_help: {e}")
                 logger.exception("Full exception:")
 
         else:
@@ -948,8 +867,6 @@ async def button_callback(callback_query: types.CallbackQuery):
         await callback_query.answer(f"Error: {str(e)[:200]}")  # Limit error message length
 
 
-def _back_keyboard() -> InlineKeyboardMarkup:
-    """Single « Back button keyboard (routes to show_help)."""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="« Back", callback_data="show_help")],
-    ])
+def _back_rows():
+    """Single « Back button row (routes to show_help)."""
+    return [[("« Back", "show_help", "primary")]]
