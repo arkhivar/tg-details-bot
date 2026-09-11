@@ -25,9 +25,19 @@ def _rich_rows(rows):
     return "\n" + "\n".join(parts)
 
 
+def _paragraphs(html_text):
+    """Wrap each line of html_text in a <p> block.
+
+    The rich-message HTML parser treats raw newlines as collapsible
+    whitespace (like a browser), so line breaks must be expressed as
+    paragraph blocks."""
+    lines = [line.strip() for line in html_text.split("\n")]
+    return "".join(f"<p>{line}</p>" for line in lines if line)
+
+
 async def reply_rich(message, html_text, rows=None):
     """Reply with a rich message: html_text plus optional in-bubble button rows."""
-    html = (html_text + _rich_rows(rows)) if rows else html_text
+    html = _paragraphs(html_text) + (_rich_rows(rows) if rows else "")
     return await message.bot.send_rich_message(
         chat_id=message.chat.id,
         rich_message=InputRichMessage(html=html),
@@ -41,7 +51,7 @@ async def edit_rich(message, html_text, rows=None):
 
     Falls back to a new rich reply when the message can't be edited
     (e.g. a legacy plain-text menu Telegram refuses to convert)."""
-    html = (html_text + _rich_rows(rows)) if rows else html_text
+    html = _paragraphs(html_text) + (_rich_rows(rows) if rows else "")
     try:
         return await message.bot.edit_message_text(
             rich_message=InputRichMessage(html=html),
