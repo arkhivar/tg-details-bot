@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
-ALL_CALLBACKS = {"get_id", "get_info", "get_type", "get_members", "get_admins", "get_topics", "group_id_help", "show_help"}
+ALL_CALLBACKS = {"get_id", "get_info", "get_type", "get_members", "get_admins", "get_topics", "group_id_help", "show_help", "show_menu"}
 
 
 def _rich_rows(rows):
@@ -23,6 +23,55 @@ def _rich_rows(rows):
             buttons.append(f'<tg-button type="callback_data"{style} data="{data}">{text}</tg-button>')
         parts.append('<tg-button-row align="center">' + "".join(buttons) + "</tg-button-row>")
     return "\n" + "\n".join(parts)
+
+
+def _menu_rows(is_forum=False, is_private=False):
+    """Button rows of the main menu screen (the screen « Back returns to)."""
+    if is_private:
+        return [
+            [("📋 Get Chat ID", "get_id", "primary"), ("ℹ️ Chat Info", "get_info")],
+            [("📊 Chat Type", "get_type"), ("❓ Help", "show_help")],
+        ]
+    rows = [
+        [("📋 Get Chat ID", "get_id", "primary"), ("📊 Chat Type", "get_type")],
+        [("👥 Members", "get_members"), ("👮‍♂️ Admins", "get_admins")],
+    ]
+    if is_forum:
+        rows.append([("📝 Topics", "get_topics")])
+    rows.append([("❓ Help", "show_help")])
+    return rows
+
+
+async def show_main_menu(message, edit=False):
+    """Render the main menu: chat information plus the full button set.
+
+    This is the single screen every « Back button returns to, so
+    navigation is predictable no matter where a detail screen was
+    opened from."""
+    is_private = message.chat.type == "private"
+
+    if is_private:
+        text = (
+            "👋 <b>Main Menu</b>\n\n"
+            "I can help you get technical information about chats. "
+            "Pick an action below, or use /help to see all commands."
+        )
+        rows = _menu_rows(is_private=True)
+    else:
+        chat_info = await get_chat_info(message.bot, message.chat.id)
+        formatted_info = format_chat_info(chat_info)
+
+        if chat_info.get('is_forum'):
+            topic_info = detect_topic_from_message(message)
+            if topic_info.get('topic_id'):
+                formatted_info += f"\n\n🎯 <b>Current Topic ID</b>: {topic_info['topic_id']}"
+
+        text = f"🤖 <b>Chat Information</b>\n\n{formatted_info}"
+        rows = _menu_rows(is_forum=bool(chat_info.get('is_forum')))
+
+    if edit:
+        return await edit_rich(message, text, rows)
+    return await reply_rich(message, text, rows)
 
 
 def _paragraphs(html_text):
@@ -339,7 +388,6 @@ async def admins_command(message: types.Message):
         formatted_info = format_admin_info(admins_info)
 
         # Turn the processing placeholder into the result
-        # (« Back routes to show_help, which handles forum detection)
         await edit_rich(processing_msg, formatted_info, _back_rows())
 
     except Exception as e:
@@ -634,33 +682,11 @@ async def message_handler(message: types.Message):
     bot_username = bot_info.username
 
     if message.text and f"@{bot_username}" in message.text:
-        # Bot was mentioned, send full detailed info
+        # Bot was mentioned, send the main menu (same screen « Back returns to)
         logger.info(f"Bot was mentioned in chat: {chat_id}")
 
         try:
-            # Get full chat info
-            chat_info = await get_chat_info(message.bot, chat_id)
-            formatted_info = format_chat_info(chat_info)
-
-            # Add forum topic detection if this is a forum
-            if chat_info.get('is_forum'):
-                topic_info = detect_topic_from_message(message)
-
-                if topic_info.get('topic_id'):
-                    formatted_info += f"\n\n🎯 <b>Current Topic ID</b>: {topic_info['topic_id']}"
-                    formatted_info += f"\n\n💡 <b>Tip</b>: Use /info for detailed information or /topics for forum-specific details"
-                else:
-                    formatted_info += f"\n\n💡 <b>Tip</b>: Use /topics for forum-specific details"
-
-            rows = [
-                [("👮‍♂️ Admins", "get_admins", "primary"), ("❓ Help", "show_help")],
-            ]
-
-            await reply_rich(
-                message,
-                f"🤖 <b>Chat Information</b>\n\n{formatted_info}",
-                rows
-            )
+            await show_main_menu(message)
 
         except Exception as e:
             logger.error(f"Error getting full chat info on mention: {e}")
@@ -823,6 +849,9 @@ async def button_callback(callback_query: types.CallbackQuery):
                     _back_rows()
                 )
 
+        elif action == "show_menu":
+            await show_main_menu(callback_query.message, edit=True)
+
         elif action == "show_help":
             # First, immediately answer the callback to remove loading state
             try:
@@ -839,12 +868,14 @@ async def button_callback(callback_query: types.CallbackQuery):
                     [("📊 Chat Type", "get_type"), ("👥 Members", "get_members")],
                     [("📝 Topics", "get_topics"), ("👮‍♂️ Admins", "get_admins")],
                     [("❓ Group ID Help", "group_id_help")],
+                    [("« Back", "show_menu", "primary")],
                 ]
             else:
                 rows = [
                     [("📋 Get Chat ID", "get_id", "primary"), ("ℹ️ Chat Info", "get_info")],
                     [("📊 Chat Type", "get_type"), ("👥 Members", "get_members")],
                     [("👮‍♂️ Admins", "get_admins"), ("❓ Group ID Help", "group_id_help")],
+                    [("« Back", "show_menu", "primary")],
                 ]
 
             help_text = (
@@ -882,5 +913,5 @@ async def button_callback(callback_query: types.CallbackQuery):
 
 
 def _back_rows():
-    """Single « Back button row (routes to show_help)."""
-    return [[("« Back", "show_help", "primary")]]
+    """Single « Back button row (routes to the main menu)."""
+    return [[("« Back", "show_menu", "primary")]]
